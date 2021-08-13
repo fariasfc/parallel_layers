@@ -1,0 +1,189 @@
+"""Main module."""
+
+import math
+from typing import List
+from torch import nn
+from torch.functional import Tensor
+from torch.nn import init
+import torch
+from torch.nn.modules.linear import Linear
+from torch.nn.parameter import Parameter
+
+
+def build_layer_ids(
+    repetitions: int,
+    activation_functions: list,
+    min_neurons: int,
+    max_neurons: int,
+    step: int,
+):
+    activation_names = [a.__class__.__name__ for a in activation_functions]
+    if len(set(activation_names)) != len(activation_names):
+        raise ValueError("activation_functions should must have only unique values.")
+
+    num_activations = len(activation_functions)
+
+    neurons_structure = torch.arange(min_neurons, max_neurons + 1, step).tolist()
+    num_parallel_layers = len(neurons_structure) * num_activations * repetitions
+
+    i = 0
+    layer_ids = []
+    while i < num_parallel_layers:
+        for structure in neurons_structure:
+            layer_ids = layer_ids + ([i] * structure)
+            i += 1
+    # for _ in range(num_parallel_layers):
+    #     for structure in neurons_structure:
+    #         layer_ids = layer_ids + ([i] * structure)
+    #         i += 1
+
+    return layer_ids
+
+
+class ParallelMLPs(nn.Module):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        hidden_neuron__model_id: List[int],
+        activations: List[nn.Module],
+        bias: bool = True,
+    ):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.hidden_neuron__model_id = torch.Tensor(hidden_neuron__model_id).long()
+        self.total_hidden_neurons = len(self.hidden_neuron__model_id)
+        self.unique_model_ids = sorted(list(set(hidden_neuron__model_id)))
+        self.num_unique_models = len(self.unique_model_ids)
+        self.activations = activations
+        self.num_activations = len(activations)
+        self.activations_split = self.total_hidden_neurons // self.num_activations
+
+        self.hidden_layer = nn.Linear(self.in_features, self.total_hidden_neurons)
+        self.weight = Parameter(
+            torch.Tensor(self.out_features, self.total_hidden_neurons)
+        )
+        if bias:
+            self.bias = Parameter(
+                torch.Tensor(self.num_unique_models, self.out_features)
+            )
+            # self.bias__layer_id = torch.Tensor(
+            #     [
+            #         i
+            #         for i in range(self.num_unique_layers)
+            #         for _ in range(self.out_features)
+            #     ]
+            # ).long()
+        else:
+            self.bias = None
+            self.register_parameter("bias", None)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        with torch.no_grad():
+            for layer_id in self.unique_model_ids:
+                w_mask = self.hidden_neuron__model_id == layer_id
+                # b_mask = self.bias__layer_id == layer_id
+                hidden_w = self.hidden_layer.weight[w_mask, :]
+                hidden_b = self.hidden_layer.bias[w_mask]
+
+                out_w = self.weight[:, w_mask]
+                out_b = self.bias[layer_id, :]
+
+                def _init_weights(w, b):
+                    init.kaiming_uniform_(w, a=math.sqrt(5))
+                    fan_in, _ = init._calculate_fan_in_and_fan_out(w)
+                    bound = 1 / math.sqrt(fan_in)
+                    init.uniform_(b, -bound, bound)
+                    return w, b
+
+                hidden_w, hidden_b = _init_weights(hidden_w, hidden_b)
+                self.hidden_layer.weight[w_mask, :] = hidden_w
+                self.hidden_layer.bias[w_mask] = hidden_b
+
+                out_w, out_b = _init_weights(out_w, out_b)
+                self.weight[:, w_mask] = out_w
+                self.bias[layer_id, :] = out_b
+
+    def apply_activations(self, x: Tensor) -> Tensor:
+        tensors = x.split(self.activations_split, dim=1)
+        output = []
+        sub_tensor_out_features = tensors[0].shape[1]
+        for (act, sub_tensor) in zip(self.activations, tensors):
+            if sub_tensor.shape[1] != sub_tensor_out_features:
+                raise RuntimeError(
+                    f"sub_tensors with different number of parameters per activation {[t.shape for t in tensors]}"
+                )
+            output.append(act(sub_tensor))
+        output = torch.cat(output, dim=1)
+        return output
+
+    def forward(self, x: Tensor) -> Tensor:
+        batch_size = x.shape[0]
+        x = self.hidden_layer(x)
+        x = self.apply_activations(x)
+
+        x = (
+            x[:, :, None] * self.weight.T[None, :, :]
+        )  # [batch_size, max_neurons, out_features]
+
+        # [batch_size, total_repetitions, num_architectures, out_features]
+        adjusted_out = (
+            torch.zeros(
+                batch_size,
+                self.num_unique_models,
+                self.out_features,
+            )
+            # .to(self.device)
+            .scatter_add_(
+                1,
+                # self.hidden_neuron__layer_id,
+                self.hidden_neuron__model_id[None, :, None].expand(
+                    batch_size, -1, self.out_features
+                ),
+                x,
+            )
+        ) + self.bias[None, :, :]
+
+        return adjusted_out
+
+    def extract_mlp(self, model_id: int):
+        if model_id >= self.num_unique_models:
+            raise ValueError(
+                f"model_id {model_id} > num_uniqe_models {self.num_unique_models}"
+            )
+
+        with torch.no_grad():
+            model_neurons = self.hidden_neuron__model_id == model_id
+            hidden_weight = self.hidden_layer.weight[model_neurons, :]
+            hidden_bias = self.hidden_layer.bias[model_neurons]
+
+            out_weight = self.weight[:, model_neurons]
+            out_bias = self.bias[model_id, :]
+
+            hidden_layer = nn.Linear(
+                in_features=hidden_weight.shape[1], out_features=hidden_weight.shape[0]
+            )
+            activation_index = (
+                torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
+                // self.activations_split
+            )
+            activation = self.activations[activation_index]
+            out_layer = nn.Linear(
+                in_features=hidden_layer.out_features, out_features=self.out_features
+            )
+
+            hidden_layer.weight[:, :] = hidden_weight.clone()
+            hidden_layer.bias[:] = hidden_bias.clone()
+
+            out_layer.weight[:, :] = out_weight.clone()
+            out_layer.bias[:] = out_bias.clone()
+
+        return nn.Sequential(hidden_layer, activation, out_layer)
+
+    def extra_repr(self) -> str:
+        return "in_features={}, out_features={}, bias={}".format(
+            self.in_features, self.out_features, self.bias is not None
+        )
