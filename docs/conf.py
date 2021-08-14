@@ -154,7 +154,7 @@ texinfo_documents = [
         "parallel_mlps Documentation",
         author,
         "parallel_mlps",
-        "One line description of project.",
-        "Miscellaneous",
+        "Parallel MLPs models.",
+        "Machine Learning, MLP",
     ),
 ]
