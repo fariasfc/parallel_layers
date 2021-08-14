@@ -1,4 +1,4 @@
-Welcome to parallel_layers's documentation!
+Welcome to parallel_mlps's documentation!
 ======================================
 
 .. toctree::

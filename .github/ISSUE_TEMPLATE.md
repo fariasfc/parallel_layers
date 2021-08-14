@@ -1,6 +1,6 @@
-* parallel_layers version:
-* Python version:
-* Operating System:
+-   parallel_mlps version:
+-   Python version:
+-   Operating System:
 
 ### Description
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-"""Tests for `parallel_layers` package."""
+"""Tests for `parallel_mlps` package."""
 
 from parallel_mlps.parallel_mlp import ParallelMLPs, build_layer_ids
 import pytest
@@ -82,6 +82,36 @@ def parallel_mlp_object(activation_functions, X):
             [0, 1, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 7, 7, 7, 8, 9, 9, 9, 10, 11, 11, 11],
             # fmt: on
         ),
+        (
+            [nn.ReLU(), nn.Sigmoid()],
+            3,
+            MAX_NEURONS,
+            MAX_NEURONS,
+            1,
+            # fmt: off
+            [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5]
+            # fmt: on
+        ),
+        (
+            [nn.ReLU(), nn.Sigmoid()],
+            3,
+            2,
+            4,
+            2,
+            # fmt: off
+            [0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 6, 6, 7, 7, 7, 7, 8, 8, 9, 9, 9, 9, 10, 10, 11, 11, 11, 11]
+            # fmt: on
+        ),
+        (
+            [nn.ReLU(), nn.Tanh(), nn.Sigmoid()],
+            2,
+            2,
+            4,
+            2,
+            # fmt: off
+            [0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 6, 6, 7, 7, 7, 7, 8, 8, 9, 9, 9, 9, 10, 10, 11, 11, 11, 11]
+            # fmt: on
+        ),
     ],
 )
 def test_build_layer_ids(
@@ -99,14 +129,31 @@ def test_build_layer_ids(
     print(layers_ids)
 
 
-# def test_parallel_mlps(X):
-#     parallel_mlps.ParallelLayer(in_features=N_FEATURES, out_features=N_OUTPUTS)
+def test_fail_build_layer_ids():
+    with pytest.raises(ValueError, match=r".*only unique values.*"):
+        build_layer_ids(
+            repetitions=2,
+            activation_functions=[nn.ReLU(), nn.Sigmoid(), nn.Sigmoid()],
+            min_neurons=MIN_NEURONS,
+            max_neurons=MAX_NEURONS,
+            step=1,
+        )
+
+    with pytest.raises(ValueError, match=r".*nn.Identity().*"):
+        build_layer_ids(
+            repetitions=2,
+            activation_functions=[],
+            min_neurons=MIN_NEURONS,
+            max_neurons=MAX_NEURONS,
+            step=1,
+        )
 
 
 def test_parallel_mlp_forward(parallel_mlp_object, X):
     output = parallel_mlp_object(X)
     mlp = parallel_mlp_object.extract_mlp(2)
-    print(output)
+    output_mlp = mlp(X)
+    assert torch.allclose(mlp, output_mlp)
 
 
 @pytest.fixture

@@ -3,6 +3,7 @@
 import math
 from typing import List
 from torch import nn
+from torch._C import Value
 from torch.functional import Tensor
 from torch.nn import init
 import torch
@@ -17,25 +18,27 @@ def build_layer_ids(
     max_neurons: int,
     step: int,
 ):
+
+    if len(activation_functions) == 0:
+        raise ValueError(
+            "At least one activation function must be passed. Try `nn.Identity()` if you want no activation."
+        )
+
     activation_names = [a.__class__.__name__ for a in activation_functions]
     if len(set(activation_names)) != len(activation_names):
-        raise ValueError("activation_functions should must have only unique values.")
+        raise ValueError("activation_functions must have only unique values.")
 
     num_activations = len(activation_functions)
 
     neurons_structure = torch.arange(min_neurons, max_neurons + 1, step).tolist()
-    num_parallel_layers = len(neurons_structure) * num_activations * repetitions
+    num_parallel_mlps = len(neurons_structure) * num_activations * repetitions
 
     i = 0
     layer_ids = []
-    while i < num_parallel_layers:
+    while i < num_parallel_mlps:
         for structure in neurons_structure:
-            layer_ids = layer_ids + ([i] * structure)
+            layer_ids += [i] * structure
             i += 1
-    # for _ in range(num_parallel_layers):
-    #     for structure in neurons_structure:
-    #         layer_ids = layer_ids + ([i] * structure)
-    #         i += 1
 
     return layer_ids
 
@@ -68,28 +71,22 @@ class ParallelMLPs(nn.Module):
             self.bias = Parameter(
                 torch.Tensor(self.num_unique_models, self.out_features)
             )
-            # self.bias__layer_id = torch.Tensor(
-            #     [
-            #         i
-            #         for i in range(self.num_unique_layers)
-            #         for _ in range(self.out_features)
-            #     ]
-            # ).long()
         else:
             self.bias = None
             self.register_parameter("bias", None)
 
         self.reset_parameters()
 
-    def reset_parameters(self):
+    def reset_parameters(self, layer_ids=None):
+        if layer_ids == None:
+            layer_ids = self.unique_model_ids
         with torch.no_grad():
-            for layer_id in self.unique_model_ids:
-                w_mask = self.hidden_neuron__model_id == layer_id
-                # b_mask = self.bias__layer_id == layer_id
-                hidden_w = self.hidden_layer.weight[w_mask, :]
-                hidden_b = self.hidden_layer.bias[w_mask]
+            for layer_id in layer_ids:
+                hidden_mask = self.hidden_neuron__model_id == layer_id
+                hidden_w = self.hidden_layer.weight[hidden_mask, :]
+                hidden_b = self.hidden_layer.bias[hidden_mask]
 
-                out_w = self.weight[:, w_mask]
+                out_w = self.weight[:, hidden_mask]
                 out_b = self.bias[layer_id, :]
 
                 def _init_weights(w, b):
@@ -100,11 +97,11 @@ class ParallelMLPs(nn.Module):
                     return w, b
 
                 hidden_w, hidden_b = _init_weights(hidden_w, hidden_b)
-                self.hidden_layer.weight[w_mask, :] = hidden_w
-                self.hidden_layer.bias[w_mask] = hidden_b
+                self.hidden_layer.weight[hidden_mask, :] = hidden_w
+                self.hidden_layer.bias[hidden_mask] = hidden_b
 
                 out_w, out_b = _init_weights(out_w, out_b)
-                self.weight[:, w_mask] = out_w
+                self.weight[:, hidden_mask] = out_w
                 self.bias[layer_id, :] = out_b
 
     def apply_activations(self, x: Tensor) -> Tensor:

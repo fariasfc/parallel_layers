@@ -2,6 +2,6 @@
 Usage
 =====
 
-To use parallel_layers in a project::
+To use parallel_mlps in a project::
 
-    import parallel_layers
+    import parallel_mlps

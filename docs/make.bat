@@ -9,7 +9,7 @@ if "%SPHINXBUILD%" == "" (
 )
 set SOURCEDIR=.
 set BUILDDIR=_build
-set SPHINXPROJ=parallel_layers
+set SPHINXPROJ=parallel_mlps
 
 if "%1" == "" goto help
 

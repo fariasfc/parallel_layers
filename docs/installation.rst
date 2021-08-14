@@ -8,13 +8,13 @@ Installation
 Stable release
 --------------
 
-To install parallel_layers, run this command in your terminal:
+To install parallel_mlps, run this command in your terminal:
 
 .. code-block:: console
 
-    $ pip install parallel_layers
+    $ pip install parallel_mlps
 
-This is the preferred method to install parallel_layers, as it will always install the most recent stable release.
+This is the preferred method to install parallel_mlps, as it will always install the most recent stable release.
 
 If you don't have `pip`_ installed, this `Python installation guide`_ can guide
 you through the process.
@@ -26,19 +26,19 @@ you through the process.
 From sources
 ------------
 
-The sources for parallel_layers can be downloaded from the `Github repo`_.
+The sources for parallel_mlps can be downloaded from the `Github repo`_.
 
 You can either clone the public repository:
 
 .. code-block:: console
 
-    $ git clone git://github.com/fariasfc/parallel_layers
+    $ git clone git://github.com/fariasfc/parallel_mlps
 
 Or download the `tarball`_:
 
 .. code-block:: console
 
-    $ curl -OJL https://github.com/fariasfc/parallel_layers/tarball/master
+    $ curl -OJL https://github.com/fariasfc/parallel_mlps/tarball/master
 
 Once you have a copy of the source, you can install it with:
 
@@ -47,5 +47,5 @@ Once you have a copy of the source, you can install it with:
     $ python setup.py install
 
 
-.. _Github repo: https://github.com/fariasfc/parallel_layers
-.. _tarball: https://github.com/fariasfc/parallel_layers/tarball/master
+.. _Github repo: https://github.com/fariasfc/parallel_mlps
+.. _tarball: https://github.com/fariasfc/parallel_mlps/tarball/master

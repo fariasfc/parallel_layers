@@ -4,7 +4,7 @@
 # You can set these variables from the command line.
 SPHINXOPTS    =
 SPHINXBUILD   = python -msphinx
-SPHINXPROJ    = parallel_layers
+SPHINXPROJ    = parallel_mlps
 SOURCEDIR     = .
 BUILDDIR      = _build
 

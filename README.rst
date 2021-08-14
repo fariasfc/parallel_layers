@@ -1,13 +1,13 @@
 ===============
-parallel_layers
+parallel_mlps
 ===============
 
 
-.. image:: https://img.shields.io/pypi/v/parallel_layers.svg
-        :target: https://pypi.python.org/pypi/parallel_layers
+.. image:: https://img.shields.io/pypi/v/parallel_mlps.svg
+        :target: https://pypi.python.org/pypi/parallel_mlps
 
-.. image:: https://img.shields.io/travis/fariasfc/parallel_layers.svg
-        :target: https://travis-ci.com/fariasfc/parallel_layers
+.. image:: https://img.shields.io/travis/fariasfc/parallel_mlps.svg
+        :target: https://travis-ci.com/fariasfc/parallel_mlps
 
 .. image:: https://readthedocs.org/projects/parallel-layers/badge/?version=latest
         :target: https://parallel-layers.readthedocs.io/en/latest/?version=latest
