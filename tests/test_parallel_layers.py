@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
-"""Tests for `parallel_mlps` package."""
 
+from torch.functional import Tensor
 from parallel_mlps.parallel_mlp import ParallelMLPs, build_layer_ids
 import pytest
 import torch
 from torch import nn
+from torch.optim import Adam
 
+"""Tests for `parallel_mlps` package."""
 torch.manual_seed(0)
 
 
@@ -26,18 +28,6 @@ def X():
 @pytest.fixture
 def activation_functions():
     return [nn.ReLU(), nn.Sigmoid()]
-
-
-def test_repeated_activation_functions():
-    with pytest.raises(ValueError) as e:
-        layers_ids = build_layer_ids(
-            activation_functions=[nn.ReLU(), nn.Sigmoid(), nn.ReLU()],
-            min_neurons=MIN_NEURONS,
-            max_neurons=MAX_NEURONS,
-            step=1,
-        )
-
-    assert "unique values" in str(e.value)
 
 
 @pytest.fixture
@@ -149,11 +139,31 @@ def test_fail_build_layer_ids():
         )
 
 
-def test_parallel_mlp_forward(parallel_mlp_object, X):
+def test_parallel_single_mlps_forward(parallel_mlp_object: ParallelMLPs, X: Tensor):
     output = parallel_mlp_object(X)
-    mlp = parallel_mlp_object.extract_mlp(2)
-    output_mlp = mlp(X)
-    assert torch.allclose(mlp, output_mlp)
+    for i in parallel_mlp_object.unique_model_ids:
+        mlp = parallel_mlp_object.extract_mlp(i)
+        output_mlp = mlp(X)
+        assert torch.allclose(output[:, i, :], output_mlp)
+
+def test_trainings(X, parallel_mlp_object: ParallelMLPs):
+    single_models = [parallel_mlp_object.extract_mlp(i) for i in parallel_mlp_object.unique_model_ids]
+    parallel_optimizer = Adam(params=parallel_mlp_object.parameters())
+    num_epochs = 10
+    parallel_loss = nn.CrossEntropyLoss(reduction='none')
+    sequential_loss = nn.CrossEntropyLoss()
+
+    for e in range(num_epochs):
+        parallel_optimizer.zero_grad()
+        outputs = parallel_mlp_object(X)
+        per_sample_candidate_losses = parallel_mlp_object.calculate_loss(parallel_loss, outputs, e)
+        candidate_losses = per_sample_candidate_losses.mean(0)
+        candidate_losses.backward(gradient=gradient)
+        optimizer.step()
+
+
+
+    single_optimizer = Adam(params=parallel_mlp_object.parameters())
 
 
 @pytest.fixture

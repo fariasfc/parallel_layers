@@ -1,5 +1,4 @@
-"""Main module."""
-
+from copy import deepcopy
 import math
 from typing import List
 from torch import nn
@@ -11,7 +10,7 @@ from torch.nn.modules.linear import Linear
 from torch.nn.parameter import Parameter
 
 
-def build_layer_ids(
+def build_model_ids(
     repetitions: int,
     activation_functions: list,
     min_neurons: int,
@@ -55,12 +54,15 @@ class ParallelMLPs(nn.Module):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
+        self.activations = activations
+
         self.hidden_neuron__model_id = torch.Tensor(hidden_neuron__model_id).long()
         self.total_hidden_neurons = len(self.hidden_neuron__model_id)
         self.unique_model_ids = sorted(list(set(hidden_neuron__model_id)))
+
         self.num_unique_models = len(self.unique_model_ids)
-        self.activations = activations
         self.num_activations = len(activations)
+
         self.activations_split = self.total_hidden_neurons // self.num_activations
 
         self.hidden_layer = nn.Linear(self.in_features, self.total_hidden_neurons)
@@ -119,12 +121,12 @@ class ParallelMLPs(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         batch_size = x.shape[0]
-        x = self.hidden_layer(x)
-        x = self.apply_activations(x)
+        x = self.hidden_layer(x)  # [batch_size, total_hidden_neurons]
+        x = self.apply_activations(x)  # [batch_size, total_hidden_neurons]
 
         x = (
             x[:, :, None] * self.weight.T[None, :, :]
-        )  # [batch_size, max_neurons, out_features]
+        )  # [batch_size, total_hidden_neurons, out_features]
 
         # [batch_size, total_repetitions, num_architectures, out_features]
         adjusted_out = (
@@ -144,7 +146,25 @@ class ParallelMLPs(nn.Module):
             )
         ) + self.bias[None, :, :]
 
+        # [batch_size, num_unique_models, out_features]
         return adjusted_out
+
+    def calculate_loss(self, loss_func, preds, target):
+        if hasattr(loss_func, "reduction"):
+            assert loss_func.reduction == "none"
+
+        if preds.ndim == 3:
+            batch_size, num_models, neurons = preds.shape
+            # loss = torch.stack(
+            #     [loss_func(preds[:, i, :], labels).mean() for i in range(num_models)]
+            # )
+            loss = loss_func(
+                preds.permute(0, 2, 1), target[:, None].expand(-1, num_models)
+            )
+        else:
+            loss = loss_func(preds, target)
+
+        return loss
 
     def extract_mlp(self, model_id: int):
         if model_id >= self.num_unique_models:
@@ -167,7 +187,7 @@ class ParallelMLPs(nn.Module):
                 torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
                 // self.activations_split
             )
-            activation = self.activations[activation_index]
+            activation = deepcopy(self.activations[activation_index])
             out_layer = nn.Linear(
                 in_features=hidden_layer.out_features, out_features=self.out_features
             )
