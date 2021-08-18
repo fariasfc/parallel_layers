@@ -16,7 +16,7 @@ def main(cfg: AutoConstructiveConfig) -> None:
         loss_function=nn.CrossEntropyLoss(),
         optimizer_cls=optim.Adam,
         learning_rate=3e-4,
-        num_epochs=5,
+        num_epochs=50,
         batch_size=32,
         num_workers=6,
         repetitions=2,
@@ -24,7 +24,9 @@ def main(cfg: AutoConstructiveConfig) -> None:
         min_neurons=1,
         max_neurons=3,
         step_neurons=1,
-        device="cuda",
+        local_patience=2,
+        global_patience=2,
+        device="cpu",
     )
 
     auto_constructive.fit(

@@ -25,12 +25,12 @@ class Accumulator:
         self.tensors = []
         self.current_reduction = None
         self.best = None
-        self.improved = False
+        self._improved = False
         self.is_dirty = True
 
     def update(self, values: Tensor):
         self.is_dirty = True
-        self.improved = False
+        self._improved = False
         self.tensors.append(values)
 
     def reset(self, reset_best=False):
@@ -38,7 +38,7 @@ class Accumulator:
         self.current_reduction = None
         if reset_best:
             self.best = None
-        self.improved = False
+        self._improved = False
         self.is_dirty = True
 
     @property
@@ -46,22 +46,25 @@ class Accumulator:
         if self.is_dirty:
             raise RuntimeError("You should call reduce before checking if it improved.")
 
+        return self._improved
+
     def apply_reduction(self):
         self.is_dirty = False
 
         self.current_reduction = self.reduction_fn(self.tensors)
 
-        if self.objective == ObjectiveEnum.MAXIMIZATION:
-            self.improved = (
-                self.current_reduction > self.best if self.best is not None else True
-            )
-        else:
-            self.improved = (
-                self.current_reduction < self.best if self.best is not None else True
-            )
+        if self.best is None:
+            self.best = self.current_reduction.clone()
+            self._improved = torch.ones_like(self.current_reduction).bool()
 
-        if self.improved:
-            self.best = self.current_reduction
+        elif self.objective == ObjectiveEnum.MAXIMIZATION:
+            self._improved = self.current_reduction > self.best
+
+        else:
+            self._improved = self.current_reduction < self.best
+
+        if torch.any(self._improved):
+            self.best[self._improved] = self.current_reduction[self._improved]
 
         return self.current_reduction
 

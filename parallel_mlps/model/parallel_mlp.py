@@ -1,6 +1,6 @@
 from copy import deepcopy
 import math
-from typing import List
+from typing import Counter, List
 from torch import nn
 from torch._C import Value
 from torch.functional import Tensor
@@ -59,6 +59,7 @@ class ParallelMLPs(nn.Module):
         self.hidden_neuron__model_id = torch.Tensor(hidden_neuron__model_id).long()
         self.total_hidden_neurons = len(self.hidden_neuron__model_id)
         self.unique_model_ids = sorted(list(set(hidden_neuron__model_id)))
+        self.model_id__num_hidden_neurons = torch.bincount(self.hidden_neuron__model_id)
 
         self.num_unique_models = len(self.unique_model_ids)
         self.num_activations = len(activations)
@@ -155,9 +156,6 @@ class ParallelMLPs(nn.Module):
 
         if preds.ndim == 3:
             batch_size, num_models, neurons = preds.shape
-            # loss = torch.stack(
-            #     [loss_func(preds[:, i, :], labels).mean() for i in range(num_models)]
-            # )
             loss = loss_func(
                 preds.permute(0, 2, 1), target[:, None].expand(-1, num_models)
             )
