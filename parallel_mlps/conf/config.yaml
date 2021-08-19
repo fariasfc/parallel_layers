@@ -1,2 +1,30 @@
 training:
+    data_home: "/home/fcf/projects/parallel_mlps/datasets/"
+    n_splits: 10
+    validation_rate_from_train: 0.25
+
     dataset: "iris"
+
+    experiment_num: 0
+
+    project_name: "novo_teste"
+model:
+    all_data_to_device: True
+    loss_function: cross_entropy
+    optimizer_cls: adam
+    learning_rate: 3e-4
+    num_epochs: 5
+    batch_size: 32
+    num_workers: 0
+    repetitions: 2
+    activations:
+        - relu
+        - sigmoid
+    min_neurons: 1
+    max_neurons: 3
+    step_neurons: 1
+    local_patience: 2
+    global_patience: 2
+    transform_data_strategy: append_original_input
+    loss_rel_tol: 0.05
+    device: "cuda"

@@ -50,16 +50,22 @@ class ParallelMLPs(nn.Module):
         hidden_neuron__model_id: List[int],
         activations: List[nn.Module],
         bias: bool = True,
+        device: str = "cuda",
     ):
         super().__init__()
+        self.device = device
         self.in_features = in_features
         self.out_features = out_features
         self.activations = activations
 
-        self.hidden_neuron__model_id = torch.Tensor(hidden_neuron__model_id).long()
+        self.hidden_neuron__model_id = (
+            torch.Tensor(hidden_neuron__model_id).long().to(self.device)
+        )
         self.total_hidden_neurons = len(self.hidden_neuron__model_id)
         self.unique_model_ids = sorted(list(set(hidden_neuron__model_id)))
-        self.model_id__num_hidden_neurons = torch.bincount(self.hidden_neuron__model_id)
+        self.model_id__num_hidden_neurons = torch.bincount(
+            self.hidden_neuron__model_id
+        ).to(self.device)
 
         self.num_unique_models = len(self.unique_model_ids)
         self.num_activations = len(activations)
@@ -132,12 +138,8 @@ class ParallelMLPs(nn.Module):
         # [batch_size, total_repetitions, num_architectures, out_features]
         adjusted_out = (
             torch.zeros(
-                batch_size,
-                self.num_unique_models,
-                self.out_features,
-            )
-            # .to(self.device)
-            .scatter_add_(
+                batch_size, self.num_unique_models, self.out_features, device=x.device
+            ).scatter_add_(
                 1,
                 # self.hidden_neuron__layer_id,
                 self.hidden_neuron__model_id[None, :, None].expand(

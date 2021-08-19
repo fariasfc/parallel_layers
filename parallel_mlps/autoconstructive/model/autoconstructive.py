@@ -1,11 +1,13 @@
 from copy import deepcopy
+
+import numpy as np
 import logging
 import math
-from utils import helpers
-from utils.accumulators import Accumulator, ObjectiveEnum
+from autoconstructive.utils import helpers
+from autoconstructive.utils.accumulators import Accumulator, ObjectiveEnum
 from typing import Any, List, Type
 from torch.functional import Tensor
-from model.parallel_mlp import ParallelMLPs, build_model_ids
+from autoconstructive.model.parallel_mlp import ParallelMLPs, build_model_ids
 from torch import nn
 import torch
 from torch.optim import Optimizer
@@ -19,7 +21,7 @@ class AutoConstructive(nn.Module):
         self,
         all_data_to_device: bool,
         loss_function: nn.Module,
-        optimizer_cls: Type,
+        optimizer_type: Type,
         learning_rate: float,
         num_epochs: int,
         batch_size: int,
@@ -34,12 +36,15 @@ class AutoConstructive(nn.Module):
         transform_data_strategy: str = "append_original_input",
         loss_rel_tol: float = 0.05,
         device: str = "cuda",
+        random_state: int = 0,
         logger: Any = None,
     ):
+        if all_data_to_device and num_workers > 0:
+            raise ValueError("num_workers must be 0 if all_data_to_device is True.")
         super().__init__()
-        self.all_data_to_device: bool = all_data_to_device
-        self.loss_function: nn.Module = loss_function
-        self.optimizer_cls = optimizer_cls
+        self.all_data_to_device = all_data_to_device
+        self.loss_function = loss_function
+        self.optimizer_cls = optimizer_type
         self.learning_rate = learning_rate
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -54,6 +59,8 @@ class AutoConstructive(nn.Module):
         self.transform_data_strategy = transform_data_strategy
         self.loss_rel_tol = loss_rel_tol
         self.device: str = device
+        self.random_state = random_state
+        torch.manual_seed(random_state)
         if logger is None:
             logger = logging.getLogger()
         self.logger = logger
@@ -78,7 +85,7 @@ class AutoConstructive(nn.Module):
             batch_size=self.batch_size,
             shuffle=shuffle,
             num_workers=self.num_workers,
-            pin_memory=True,
+            pin_memory=not self.all_data_to_device,
         )
 
         return dataloader
@@ -97,7 +104,9 @@ class AutoConstructive(nn.Module):
             out_features=out_features,
             hidden_neuron__model_id=self.hidden_neuron__model_id,
             activations=self.activations,
-        )
+            bias=True,
+            device=self.device,
+        ).to(self.device)
 
         optimizer: Optimizer = self.optimizer_cls(
             params=pmlps.parameters(), lr=self.learning_rate
@@ -185,7 +194,7 @@ class AutoConstructive(nn.Module):
 
         return reduced_accumulator
 
-    def _transform_data(
+    def _apply_forward_transform_data(
         self,
         original_train_x,
         original_validation_x,
@@ -198,28 +207,48 @@ class AutoConstructive(nn.Module):
             current_train_x = best_mlp(current_train_x)
             current_validation_x = best_mlp(current_validation_x)
 
-            if self.transform_data_strategy == "append_original_input":
-                current_train_x = torch.cat((original_train_x, current_train_x), dim=1)
-                current_validation_x = torch.cat(
-                    (original_validation_x, current_validation_x), dim=1
-                )
+            current_train_x = self._transform_data(original_train_x, current_train_x)
+            current_validation_x = self._transform_data(
+                original_validation_x, current_validation_x
+            )
         best_mlp.train()
 
         return current_train_x, current_validation_x
 
+    def _transform_data(self, original_x, x):
+        if self.transform_data_strategy == "append_original_input":
+            x = torch.cat((original_x, x), dim=1)
+
+        return x
+
+    def __adjust_data(self, x, y=None):
+        if isinstance(x, np.ndarray):
+            x = torch.tensor(x)
+
+        if y is not None:
+            if isinstance(y, np.ndarray):
+                y = torch.tensor(y)
+
+            y = y.squeeze()
+
+        return x, y
+
     def fit(
         self,
-        train_x: Tensor,
-        train_y: Tensor,
-        validation_x: Tensor,
-        validation_y: Tensor,
+        x_train: Tensor,
+        y_train: Tensor,
+        x_validation: Tensor,
+        y_validation: Tensor,
     ):
 
-        current_train_x = train_x
-        current_train_y = train_y
+        x_train, y_train = self.__adjust_data(x_train, y_train)
+        x_validation, y_validation = self.__adjust_data(x_validation, y_validation)
 
-        current_validation_x = validation_x
-        current_validation_y = validation_y
+        current_train_x = x_train
+        current_train_y = y_train
+
+        current_validation_x = x_validation
+        current_validation_y = y_validation
 
         global_best_validation_loss = float("inf")
 
@@ -228,6 +257,7 @@ class AutoConstructive(nn.Module):
         current_patience = 0
 
         while current_patience < self.global_patience:
+            improved_validation = False
             train_dataloader = self._get_dataloader(current_train_x, current_train_y)
             validation_dataloader = self._get_dataloader(
                 current_validation_x, current_validation_y
@@ -270,9 +300,18 @@ class AutoConstructive(nn.Module):
                     f"No improvement. current_patience={current_patience}."
                 )
 
-            current_train_x, current_validation_x = self._transform_data(
-                train_x, validation_x, current_train_x, current_validation_x, best_mlp
+            current_train_x, current_validation_x = self._apply_forward_transform_data(
+                x_train, x_validation, current_train_x, current_validation_x, best_mlp
             )
 
     def predict(self, x: Tensor):
-        return self.best_model(x)
+        x, _ = self.__adjust_data(x, None)
+        h = x
+        total_layers = len(self.best_model)
+        for i, layer in enumerate(self.best_model):
+            h = layer(h)
+
+            if i < total_layers - 1:
+                h = self._transform_data(x, h)
+
+        return h
