@@ -1,0 +1,12 @@
+pycm
+wandb
+xgboost
+tqdm
+torchvision
+pyinstrument
+pytorch-metric-learning
+hydra-core==1.1.0
+hydra-submitit-launcher
+pylint
+autoflake
+mypy

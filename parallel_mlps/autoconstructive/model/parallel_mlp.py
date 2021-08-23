@@ -1,6 +1,10 @@
 from copy import deepcopy
+from functools import partial
+from autoconstructive.utils import helpers
+from joblib import Parallel, delayed
+import numpy as np
 import math
-from typing import Counter, List
+from typing import Any, Counter, List
 from torch import nn
 from torch._C import Value
 from torch.functional import Tensor
@@ -8,6 +12,8 @@ from torch.nn import init
 import torch
 from torch.nn.modules.linear import Linear
 from torch.nn.parameter import Parameter
+from torch.multiprocessing import Pool, set_start_method, freeze_support
+
 
 
 def build_model_ids(
@@ -51,21 +57,27 @@ class ParallelMLPs(nn.Module):
         activations: List[nn.Module],
         bias: bool = True,
         device: str = "cuda",
+        logger: Any= None
     ):
         super().__init__()
         self.device = device
         self.in_features = in_features
         self.out_features = out_features
         self.activations = activations
+        self.logger = logger
 
         self.hidden_neuron__model_id = (
             torch.Tensor(hidden_neuron__model_id).long().to(self.device)
         )
         self.total_hidden_neurons = len(self.hidden_neuron__model_id)
         self.unique_model_ids = sorted(list(set(hidden_neuron__model_id)))
-        self.model_id__num_hidden_neurons = torch.bincount(
-            self.hidden_neuron__model_id
+        self.model_id__num_hidden_neurons = torch.from_numpy(
+            np.bincount(self.hidden_neuron__model_id.cpu().numpy())
         ).to(self.device)
+
+        # self.model_id__num_hidden_neurons = torch.bincount(
+        #     self.hidden_neuron__model_id
+        # ).to(self.device)
 
         self.num_unique_models = len(self.unique_model_ids)
         self.num_activations = len(activations)
@@ -85,11 +97,18 @@ class ParallelMLPs(nn.Module):
             self.register_parameter("bias", None)
 
         self.reset_parameters()
+        self.to(device)
+
+
 
     def reset_parameters(self, layer_ids=None):
         if layer_ids == None:
             layer_ids = self.unique_model_ids
+
         with torch.no_grad():
+            # with Pool(processes=8) as pool:
+            #     pool.map(partial(helpers.reset_parameters_model,hidden_layer=self.hidden_layer, hidden_neuron__model_id=self.hidden_neuron__model_id, weight=self.weight, bias=self.bias), layer_ids)
+            # Parallel(n_jobs=8)(delayed(lambda layer_id: helpers.reset_parameters_model(self.hidden_layer, self.hidden_neuron__model_id, self.weight, self.bias, layer_id))(i) for i in layer_ids)
             for layer_id in layer_ids:
                 hidden_mask = self.hidden_neuron__model_id == layer_id
                 hidden_w = self.hidden_layer.weight[hidden_mask, :]
@@ -198,7 +217,7 @@ class ParallelMLPs(nn.Module):
             out_layer.weight[:, :] = out_weight.clone()
             out_layer.bias[:] = out_bias.clone()
 
-        return nn.Sequential(hidden_layer, activation, out_layer)
+        return nn.Sequential(hidden_layer, activation, out_layer).to(self.device)
 
     def extra_repr(self) -> str:
         return "in_features={}, out_features={}, bias={}".format(

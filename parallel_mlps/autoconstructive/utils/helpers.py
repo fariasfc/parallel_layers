@@ -1,4 +1,6 @@
 import torch
+import math
+from torch.nn import init
 
 
 def min_ix_argmin(a, n_hidden, ignore_zeros=False, rtol=0):
@@ -32,3 +34,30 @@ def min_ix_argmin(a, n_hidden, ignore_zeros=False, rtol=0):
     ix = min_ixs[i]
 
     return ix
+
+
+
+
+def _init_weights(w, b):
+    init.kaiming_uniform_(w, a=math.sqrt(5))
+    fan_in, _ = init._calculate_fan_in_and_fan_out(w)
+    bound = 1 / math.sqrt(fan_in)
+    init.uniform_(b, -bound, bound)
+    return w, b
+
+def reset_parameters_model(hidden_layer, hidden_neuron__model_id, weight, bias, layer_id: int):
+    hidden_mask = hidden_neuron__model_id == layer_id
+    hidden_w = hidden_layer.weight[hidden_mask, :]
+    hidden_b = hidden_layer.bias[hidden_mask]
+
+    out_w = weight[:, hidden_mask]
+    out_b = bias[layer_id, :]
+
+
+    hidden_w, hidden_b = _init_weights(hidden_w, hidden_b)
+    hidden_layer.weight[hidden_mask, :] = hidden_w
+    hidden_layer.bias[hidden_mask] = hidden_b
+
+    out_w, out_b = _init_weights(out_w, out_b)
+    weight[:, hidden_mask] = out_w
+    bias[layer_id, :] = out_b

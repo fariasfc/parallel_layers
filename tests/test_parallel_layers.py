@@ -2,15 +2,31 @@
 
 
 from torch.functional import Tensor
-from parallel_mlps.parallel_mlp import ParallelMLPs, build_layer_ids
+from parallel_mlps.autoconstructive.model.parallel_mlp import (
+    ParallelMLPs,
+    build_model_ids,
+)
 import pytest
 import torch
 from torch import nn
 from torch.optim import Adam
 
 """Tests for `parallel_mlps` package."""
-torch.manual_seed(0)
+import random
+import torch
+import os
 
+
+# Reproducibility:
+def reproducibility():
+    torch.manual_seed(0)
+    random.seed(0)
+    # torch.set_deterministic(True)
+    # torch.use_deterministic_algorithms(True)
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
+
+
+reproducibility()
 
 N_SAMPLES = 5
 N_FEATURES = 3
@@ -26,13 +42,18 @@ def X():
 
 
 @pytest.fixture
+def Y():
+    return torch.randint(low=0, high=2, size=(N_SAMPLES,))
+
+
+@pytest.fixture
 def activation_functions():
-    return [nn.ReLU(), nn.Sigmoid()]
+    return [nn.LeakyReLU(), nn.Sigmoid()]
 
 
 @pytest.fixture
 def parallel_mlp_object(activation_functions, X):
-    layer_ids = build_layer_ids(
+    layer_ids = build_model_ids(
         repetitions=3,
         activation_functions=activation_functions,
         min_neurons=MIN_NEURONS,
@@ -104,10 +125,10 @@ def parallel_mlp_object(activation_functions, X):
         ),
     ],
 )
-def test_build_layer_ids(
+def test_build_model_ids(
     activation_functions, repetitions, min_neurons, max_neurons, step, expected
 ):
-    layers_ids = build_layer_ids(
+    layers_ids = build_model_ids(
         repetitions=repetitions,
         activation_functions=activation_functions,
         min_neurons=min_neurons,
@@ -119,9 +140,9 @@ def test_build_layer_ids(
     print(layers_ids)
 
 
-def test_fail_build_layer_ids():
+def test_fail_build_model_ids():
     with pytest.raises(ValueError, match=r".*only unique values.*"):
-        build_layer_ids(
+        build_model_ids(
             repetitions=2,
             activation_functions=[nn.ReLU(), nn.Sigmoid(), nn.Sigmoid()],
             min_neurons=MIN_NEURONS,
@@ -130,7 +151,7 @@ def test_fail_build_layer_ids():
         )
 
     with pytest.raises(ValueError, match=r".*nn.Identity().*"):
-        build_layer_ids(
+        build_model_ids(
             repetitions=2,
             activation_functions=[],
             min_neurons=MIN_NEURONS,
@@ -146,24 +167,56 @@ def test_parallel_single_mlps_forward(parallel_mlp_object: ParallelMLPs, X: Tens
         output_mlp = mlp(X)
         assert torch.allclose(output[:, i, :], output_mlp)
 
-def test_trainings(X, parallel_mlp_object: ParallelMLPs):
-    single_models = [parallel_mlp_object.extract_mlp(i) for i in parallel_mlp_object.unique_model_ids]
-    parallel_optimizer = Adam(params=parallel_mlp_object.parameters())
-    num_epochs = 10
-    parallel_loss = nn.CrossEntropyLoss(reduction='none')
+
+def test_trainings(X, Y, parallel_mlp_object: ParallelMLPs):
+    reproducibility()
+    lr = 1
+    atol = 1e-8
+    rtol = 0.99
+    parallel_optimizer = Adam(params=parallel_mlp_object.parameters(), lr=lr)
+
+    single_models = [
+        parallel_mlp_object.extract_mlp(i) for i in parallel_mlp_object.unique_model_ids
+    ]
+    single_optimizers = [
+        Adam(params=model.parameters(), lr=lr) for model in single_models
+    ]
+
+    num_epochs = 100
+    parallel_loss = nn.CrossEntropyLoss(reduction="none")
     sequential_loss = nn.CrossEntropyLoss()
 
+    X = X.to(parallel_mlp_object.device)
+    Y = Y.to(parallel_mlp_object.device)
+    gradient = torch.ones(parallel_mlp_object.num_unique_models).to(X.device)
+
     for e in range(num_epochs):
+        print(f"Epoch: {e}")
         parallel_optimizer.zero_grad()
         outputs = parallel_mlp_object(X)
-        per_sample_candidate_losses = parallel_mlp_object.calculate_loss(parallel_loss, outputs, e)
+        per_sample_candidate_losses = parallel_mlp_object.calculate_loss(
+            parallel_loss, outputs, Y
+        )
         candidate_losses = per_sample_candidate_losses.mean(0)
         candidate_losses.backward(gradient=gradient)
-        optimizer.step()
+        parallel_optimizer.step()
+        print(candidate_losses)
+        print(parallel_mlp_object.hidden_layer.weight.mean())
 
+        for i, (model, optimizer) in enumerate(zip(single_models, single_optimizers)):
+            optimizer.zero_grad()
+            single_outputs = model(X)
+            loss = sequential_loss(single_outputs, Y)
+            loss.backward()
+            optimizer.step()
 
+            # Asserts
+            assert torch.allclose(candidate_losses[i], loss, atol=atol, rtol=rtol)
 
-    single_optimizer = Adam(params=parallel_mlp_object.parameters())
+            m = parallel_mlp_object.extract_mlp(i)
+            # assert torch.allclose(m[0].weight, model[0].weight, atol=atol, rtol=rtol)
+            assert type(m[1]) == type(model[1])
+            # assert torch.allclose(m[2].weight, model[2].weight, atol=atol, rtol=rtol)
 
 
 @pytest.fixture

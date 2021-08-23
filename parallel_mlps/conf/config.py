@@ -74,7 +74,7 @@ def resolve_activations(list_activations):
             act_list.append(nn.Tanh())
         elif act == "selu":
             act_list.append(nn.SELU())
-        elif act == "lrelu":
+        elif act == "leakyrelu":
             act_list.append(nn.LeakyReLU())
         elif act == "identity":
             act_list.append(nn.Identity())

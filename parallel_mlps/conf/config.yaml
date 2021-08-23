@@ -3,7 +3,7 @@ training:
     n_splits: 10
     validation_rate_from_train: 0.25
 
-    dataset: "iris"
+    dataset: "diabetes"
 
     experiment_num: 0
 
@@ -13,18 +13,24 @@ model:
     loss_function: cross_entropy
     optimizer_cls: adam
     learning_rate: 3e-4
-    num_epochs: 5
+    num_epochs: 100
     batch_size: 32
     num_workers: 0
-    repetitions: 2
+    repetitions: 10
     activations:
+        - identity
         - relu
+        - leakyrelu
+        - selu
+        - elu
+        - gelu
         - sigmoid
+        - tanh
     min_neurons: 1
-    max_neurons: 3
+    max_neurons: 100
     step_neurons: 1
     local_patience: 2
     global_patience: 2
     transform_data_strategy: append_original_input
-    loss_rel_tol: 0.05
+    loss_rel_tol: 0.01
     device: "cuda"

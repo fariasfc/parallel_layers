@@ -91,8 +91,8 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         step_neurons=cfg.model.step_neurons,
         local_patience=cfg.model.local_patience,
         global_patience=cfg.model.global_patience,
-        transform_data_strategy="append_original_input",
-        loss_rel_tol=0.05,
+        transform_data_strategy=cfg.model.transform_data_strategy,
+        loss_rel_tol=cfg.model.loss_rel_tol,
         device=cfg.model.device,
         random_state=random_state,
         logger=logger,
@@ -129,7 +129,12 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
     )
     end = perf_counter()
 
-    wandb.run.summary.update({"training_time": end - start})
+    wandb.run.summary.update(
+        {
+            "training_time": end - start,
+            "architecture": auto_constructive.get_best_model_arch()
+        }
+    )
 
     auto_constructive.eval()
     with torch.no_grad():
