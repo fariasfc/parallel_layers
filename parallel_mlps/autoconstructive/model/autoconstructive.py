@@ -1,6 +1,7 @@
 from copy import deepcopy
 import pyinstrument
 
+from time import perf_counter
 import wandb
 import numpy as np
 import logging
@@ -76,7 +77,6 @@ class AutoConstructive(nn.Module):
 
         self.best_model = None
 
-
     def _get_dataloader(self, x: Tensor, y: Tensor, shuffle=True):
         if self.all_data_to_device:
             x = x.to(self.device)
@@ -103,8 +103,9 @@ class AutoConstructive(nn.Module):
         out_features = len(train_dataloader.dataset.tensors[1].unique())
 
         profiler = pyinstrument.Profiler()
-        
-        profiler.start()
+
+        # profiler.start()
+        start = perf_counter()
         pmlps = ParallelMLPs(
             in_features=in_features,
             out_features=out_features,
@@ -113,11 +114,13 @@ class AutoConstructive(nn.Module):
             bias=True,
             device=self.device,
         ).to(self.device)
-        profiler.stop()
-        profiler.output_html()
+        end = perf_counter()
+        # profiler.stop()
+        # profiler.output_html()
 
-
-        self.logger.info(f"Created ParallelMLPs with {pmlps.num_unique_models}, starting with {self.min_neurons} neurons to {self.max_neurons} and step {self.step_neurons}, with activations {self.activations}, repeated {self.repetitions}")
+        self.logger.info(
+            f"Created ParallelMLPs in {end-start} seconds with {pmlps.num_unique_models}, starting with {self.min_neurons} neurons to {self.max_neurons} and step {self.step_neurons}, with activations {self.activations}, repeated {self.repetitions}"
+        )
 
         optimizer: Optimizer = self.optimizer_cls(
             params=pmlps.parameters(), lr=self.learning_rate
@@ -178,24 +181,49 @@ class AutoConstructive(nn.Module):
             )
             detached_reduced_train_loss = reduced_train_loss.detach().cpu()
             detached_reduced_validation_loss = reduced_validation_loss.detach().cpu()
-            wandb.log({"train/loss/avg": detached_reduced_train_loss.mean(), "epoch": epoch})
-            wandb.log({"train/loss/min": detached_reduced_train_loss.min(), "epoch": epoch})
             wandb.log(
-                {"train/losses": wandb.Histogram(detached_reduced_train_loss.cpu()), "epoch": epoch}
-            )
-            data = [[x, y] for (x, y) in zip(detached_reduced_train_loss, range(pmlps.num_unique_models))]
-            table = wandb.Table(data=data, columns = ["train_loss", "hidden_neurons"])
-            wandb.log({"my_custom_id" : wandb.plot.scatter(table,
-                                        "train_loss", "hidden_neurons")})
-            wandb.log(
-                {"validation/loss/avg": detached_reduced_validation_loss.mean(), "epoch": epoch}
+                {"train/loss/avg": detached_reduced_train_loss.mean(), "epoch": epoch}
             )
             wandb.log(
-                {"validation/loss/min": detached_reduced_validation_loss.min(), "epoch": epoch}
+                {"train/loss/min": detached_reduced_train_loss.min(), "epoch": epoch}
             )
             wandb.log(
                 {
-                    "validation/losses": wandb.Histogram(detached_reduced_validation_loss.cpu()),
+                    "train/losses": wandb.Histogram(detached_reduced_train_loss.cpu()),
+                    "epoch": epoch,
+                }
+            )
+            data = [
+                [x, y]
+                for (x, y) in zip(
+                    detached_reduced_train_loss, range(pmlps.num_unique_models)
+                )
+            ]
+            table = wandb.Table(data=data, columns=["train_loss", "hidden_neurons"])
+            wandb.log(
+                {
+                    "my_custom_id": wandb.plot.scatter(
+                        table, "train_loss", "hidden_neurons"
+                    )
+                }
+            )
+            wandb.log(
+                {
+                    "validation/loss/avg": detached_reduced_validation_loss.mean(),
+                    "epoch": epoch,
+                }
+            )
+            wandb.log(
+                {
+                    "validation/loss/min": detached_reduced_validation_loss.min(),
+                    "epoch": epoch,
+                }
+            )
+            wandb.log(
+                {
+                    "validation/losses": wandb.Histogram(
+                        detached_reduced_validation_loss.cpu()
+                    ),
                     "epoch": epoch,
                 }
             )
@@ -330,7 +358,7 @@ class AutoConstructive(nn.Module):
                     self.logger.info(
                         f"Improved validation loss from {global_best_validation_loss} to {best_validation_loss}. Added layer number {len(current_model)-1} ({current_model}). current_patience=0."
                     )
-                    
+
                     global_best_validation_loss = best_validation_loss
                     current_patience = 0
                     self.best_model = deepcopy(current_model)
@@ -344,16 +372,14 @@ class AutoConstructive(nn.Module):
             current_train_x, current_validation_x = self._apply_forward_transform_data(
                 x_train, x_validation, current_train_x, current_validation_x, best_mlp
             )
-        
-        
+
     def get_best_model_arch(self):
         arch = [self.best_model[0][0].in_features]
         for sequential in self.best_model:
-            if hasattr(sequential[0], 'out_features'):
+            if hasattr(sequential[0], "out_features"):
                 arch.append(sequential[0].out_features)
         arch.append(self.best_model[-1][2].out_features)
         return arch
-
 
     def predict(self, x: Tensor):
         x, _ = self.__adjust_data(x, None)

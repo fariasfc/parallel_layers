@@ -5,11 +5,11 @@ fi
 
 echo $1
 
-. ./.env
+. ../.env
 
-ssh fcf@200.133.5.120 "cd /home/fcf/projects/representation_learner; ./tar_wandb.sh ${1}"
+ssh fcf@200.133.5.120 "cd /home/fcf/projects/parallel_mlps; ./scripts/tar_wandb.sh ${1}"
 # Downloading wandb runs
-rsync -avH -e ssh fcf@200.133.5.120:/home/fcf/projects/representation_learner/tar_wandb_runs/$1.tar /tmp
+rsync -avH -e ssh fcf@200.133.5.120:/home/fcf/projects/parallel_mlps/tar_wandb_runs/$1.tar /tmp
 
 # extracting file
 cd /tmp

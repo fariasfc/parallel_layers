@@ -3,7 +3,7 @@ if [ $# -lt 1 ] ; then
     exit 1
 fi
 
-cd /home/fcf/projects/representation_learner
+cd /home/fcf/projects/parallel_mlp/parallel_mlp
 
 . ./.env
 # echo $WANDB_API_KEY
