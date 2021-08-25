@@ -1,0 +1,10 @@
+Bootstrap: docker
+From: nvcr.io/nvidia/pytorch:21.04-py3
+
+
+#WORKDIR /workspace
+
+
+%post
+#pip install -r /home/fcf/representation_learner/docker/requirements.txt
+pip install pycm wandb xgboost tqdm torchvision pyinstrument pytorch-metric-learning hydra-core
