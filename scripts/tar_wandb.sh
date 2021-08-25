@@ -9,7 +9,7 @@ echo $1
 mkdir -p tar_wandb_runs
 
 #find . -type d -regextype sed -regex ".*\/${1}\/.*offline-run-[0-9]\{8\}_[0-9]\{6\}-.\{8\}" -exec tar -C . -rvf tar_wandb_runs/$1.tar {} \;
-files=$(find . -type f -regextype sed -regex ".*\/${1}\/.*offline-run-[0-9]\{8\}_[0-9]\{6\}-.\{8\}.*.wandb$")
+files=$(find ../ -type f -regextype sed -regex ".*\/${1}\/.*offline-run-[0-9]\{8\}_[0-9]\{6\}-.\{8\}.*.wandb$")
 # | xargs -n 1 dirname)
 
 #echo $files

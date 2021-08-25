@@ -34,3 +34,8 @@ model:
     transform_data_strategy: append_original_input
     loss_rel_tol: 0.01
     device: "cuda"
+
+hydra:
+  sweep:
+    dir: outputs/${training.project_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${training.dataset}/${training.experiment_num}/
+    subdir: ${training.experiment_num}
