@@ -98,6 +98,7 @@ class ParallelMLPs(nn.Module):
 
         self.reset_parameters()
         self.to(device)
+        self.logger.info(f"Model sent to {device}!")
 
 
 

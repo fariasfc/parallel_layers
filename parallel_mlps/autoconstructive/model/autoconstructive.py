@@ -113,6 +113,7 @@ class AutoConstructive(nn.Module):
             activations=self.activations,
             bias=True,
             device=self.device,
+            logger=self.logger,
         ).to(self.device)
         end = perf_counter()
         # profiler.stop()
