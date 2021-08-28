@@ -188,26 +188,26 @@ class AutoConstructive(nn.Module):
             wandb.log(
                 {"train/loss/min": detached_reduced_train_loss.min(), "epoch": epoch}
             )
-            wandb.log(
-                {
-                    "train/losses": wandb.Histogram(detached_reduced_train_loss.cpu()),
-                    "epoch": epoch,
-                }
-            )
-            data = [
-                [x, y]
-                for (x, y) in zip(
-                    detached_reduced_train_loss, range(pmlps.num_unique_models)
-                )
-            ]
-            table = wandb.Table(data=data, columns=["train_loss", "hidden_neurons"])
-            wandb.log(
-                {
-                    "my_custom_id": wandb.plot.scatter(
-                        table, "train_loss", "hidden_neurons"
-                    )
-                }
-            )
+            # wandb.log(
+            #     {
+            #         "train/losses": wandb.Histogram(detached_reduced_train_loss.cpu()),
+            #         "epoch": epoch,
+            #     }
+            # )
+            # data = [
+            #     [x, y]
+            #     for (x, y) in zip(
+            #         detached_reduced_train_loss, range(pmlps.num_unique_models)
+            #     )
+            # ]
+            # table = wandb.Table(data=data, columns=["train_loss", "hidden_neurons"])
+            # wandb.log(
+            #     {
+            #         "my_custom_id": wandb.plot.scatter(
+            #             table, "train_loss", "hidden_neurons"
+            #         )
+            #     }
+            # )
             wandb.log(
                 {
                     "validation/loss/avg": detached_reduced_validation_loss.mean(),
@@ -220,14 +220,14 @@ class AutoConstructive(nn.Module):
                     "epoch": epoch,
                 }
             )
-            wandb.log(
-                {
-                    "validation/losses": wandb.Histogram(
-                        detached_reduced_validation_loss.cpu()
-                    ),
-                    "epoch": epoch,
-                }
-            )
+            # wandb.log(
+            #     {
+            #         "validation/losses": wandb.Histogram(
+            #             detached_reduced_validation_loss.cpu()
+            #         ),
+            #         "epoch": epoch,
+            #     }
+            # )
 
         return best_mlp, best_validation_loss
 
