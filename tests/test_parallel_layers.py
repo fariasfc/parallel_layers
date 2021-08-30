@@ -16,6 +16,9 @@ import random
 import torch
 import os
 
+import logging
+
+logger = logging.getLogger()
 
 # Reproducibility:
 def reproducibility():
@@ -67,11 +70,12 @@ def parallel_mlp_object(activation_functions, X):
         bias=True,
         hidden_neuron__model_id=layer_ids,
         activations=activation_functions,
+        logger=logger,
     )
 
 
 @pytest.mark.parametrize(
-    "activation_functions,repetitions,min_neurons,max_neurons,step,expected",
+    "activation_functions,repetitions,min_neurons,max_neurons,step,expected,start,end",
     [
         (
             [nn.ReLU(), nn.Sigmoid()],
@@ -80,7 +84,12 @@ def parallel_mlp_object(activation_functions, X):
             MAX_NEURONS,
             1,
             # fmt: off
-            [0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17, ],
+            [0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17],
+            [0, 1, 3, 6, 7, 9, 12, 13, 15, 18, 19, 21, 24, 25, 27, 30,31, 33],
+            [1, 3, 6, 7, 9, 12, 13, 15, 18, 19, 21, 24, 25, 27, 30,31, 33, 36],
+            # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,17,18, 19 ,20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, ]
+            # [0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17, ],
+            # [0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17, ],
             # fmt: on
         ),
         (
@@ -91,6 +100,8 @@ def parallel_mlp_object(activation_functions, X):
             2,
             # fmt: off
             [0, 1, 1, 1, 2, 3, 3, 3, 4, 5, 5, 5, 6, 7, 7, 7, 8, 9, 9, 9, 10, 11, 11, 11],
+            [0, 1, 4, 5, 8, 9, 12, 13, 16, 17, 20, 21],
+            [1, 4, 5, 8, 9, 12, 13, 16, 17, 20, 21, 24],
             # fmt: on
         ),
         (
@@ -100,7 +111,9 @@ def parallel_mlp_object(activation_functions, X):
             MAX_NEURONS,
             1,
             # fmt: off
-            [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5]
+            [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 5],
+            [0, 3, 6, 9, 12, 15],
+            [3, 6, 9, 12,15, 18],
             # fmt: on
         ),
         (
@@ -110,7 +123,9 @@ def parallel_mlp_object(activation_functions, X):
             4,
             2,
             # fmt: off
-            [0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 6, 6, 7, 7, 7, 7, 8, 8, 9, 9, 9, 9, 10, 10, 11, 11, 11, 11]
+            [0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 6, 6, 7, 7, 7, 7, 8, 8, 9, 9, 9, 9, 10, 10, 11, 11, 11, 11],
+            [0, 2, 6, 8, 12, 14, 18, 20, 24, 26, 30, 32],
+            [2, 6, 8, 12, 14, 18, 20, 24, 26, 30, 32, 36],
             # fmt: on
         ),
         (
@@ -120,13 +135,16 @@ def parallel_mlp_object(activation_functions, X):
             4,
             2,
             # fmt: off
-            [0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 6, 6, 7, 7, 7, 7, 8, 8, 9, 9, 9, 9, 10, 10, 11, 11, 11, 11]
+            # [0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29, 30, 31, 32, 33, 34, 35, ]
+            [0, 0, 1, 1, 1, 1, 2, 2, 3, 3, 3, 3, 4, 4, 5, 5, 5, 5, 6, 6, 7, 7, 7, 7, 8, 8, 9, 9, 9, 9, 10, 10, 11, 11, 11, 11],
+            [0, 2, 6, 8, 12, 14, 18, 20, 24, 26, 30, 32],
+            [2, 6, 8, 12, 14, 18, 20, 24, 26, 30, 32, 36],
             # fmt: on
         ),
     ],
 )
 def test_build_model_ids(
-    activation_functions, repetitions, min_neurons, max_neurons, step, expected
+    activation_functions, repetitions, min_neurons, max_neurons, step, expected, start, end
 ):
     layers_ids = build_model_ids(
         repetitions=repetitions,
@@ -136,7 +154,12 @@ def test_build_model_ids(
         step=step,
     )
 
+
     assert expected == layers_ids
+    if start is not None:
+        pmlps = ParallelMLPs(N_FEATURES, N_OUTPUTS, layers_ids, activation_functions, logger=logger)
+        assert torch.all(pmlps.model_id__start_idx.cpu() == torch.tensor(start))
+        assert torch.all(pmlps.model_id__end_idx.cpu() == torch.tensor(end))
     print(layers_ids)
 
 

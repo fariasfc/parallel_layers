@@ -239,7 +239,7 @@ class AutoConstructive(nn.Module):
             # )
 
         self.num_trained_mlps += total_local_resets
-        self.logger.info(f"Resetted {total_local_resets} mlps to construct this layer. num_trained_mlps so far: {self.num_trained_mlps}")
+        self.logger.info(f"Reset {total_local_resets} mlps to construct this layer. num_trained_mlps so far: {self.num_trained_mlps}")
 
         return best_mlp, best_validation_loss
 
@@ -366,7 +366,7 @@ class AutoConstructive(nn.Module):
             better_model = percentage_of_global_best_loss < (1-self.min_improvement)
 
             self.logger.info(
-                f"percentage_of_global_best_loss({percentage_of_global_best_loss}) = current_best_validation_loss({current_best_validation_loss})/global_best_validation_loss({global_best_validation_loss}) < {self.min_improvement} (={better_model})."
+                f"percentage_of_global_best_loss({percentage_of_global_best_loss}) = current_best_validation_loss({current_best_validation_loss})/global_best_validation_loss({global_best_validation_loss}) < {1-self.min_improvement} (={better_model})."
             )
 
             if better_model:

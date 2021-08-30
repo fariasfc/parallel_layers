@@ -74,6 +74,10 @@ class ParallelMLPs(nn.Module):
         self.model_id__num_hidden_neurons = torch.from_numpy(
             np.bincount(self.hidden_neuron__model_id.cpu().numpy())
         ).to(self.device)
+        # self.model_id__start_neuron = torch.zeros_like(self.model_id__num_hidden_neurons)
+        self.model_id__start_idx = torch.cat([torch.tensor([0]).to(self.device), self.model_id__num_hidden_neurons.cumsum(0)[:-1]])
+        self.model_id__end_idx = self.model_id__start_idx + self.model_id__num_hidden_neurons
+        # self.model_id__start_neuron = 
 
         # self.model_id__num_hidden_neurons = torch.bincount(
         #     self.hidden_neuron__model_id
@@ -106,10 +110,10 @@ class ParallelMLPs(nn.Module):
         if layer_ids == None:
             layer_ids = self.unique_model_ids
 
-        start = 0
         with torch.no_grad():
-            for layer_id, nb_hidden in enumerate(self.model_id__num_hidden_neurons):
-                end = start + nb_hidden
+            for layer_id in layer_ids:
+                start = self.model_id__start_idx[layer_id]
+                end = self.model_id__end_idx[layer_id]
                 hidden_w = self.hidden_layer.weight[start:end, :]
                 hidden_b = self.hidden_layer.bias[start:end]
 
@@ -121,7 +125,6 @@ class ParallelMLPs(nn.Module):
                     fan_in, _ = init._calculate_fan_in_and_fan_out(w)
                     bound = 1 / math.sqrt(fan_in)
                     init.uniform_(b, -bound, bound)
-                start = end
 
     def apply_activations(self, x: Tensor) -> Tensor:
         tensors = x.split(self.activations_split, dim=1)
