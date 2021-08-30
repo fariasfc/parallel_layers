@@ -16,26 +16,27 @@ model:
     num_epochs: 100
     batch_size: 32
     num_workers: 0
-    repetitions: 5
+    repetitions: 10
     activations:
         - identity
         - relu
         - leakyrelu
         - selu
-        - elu
+        # - elu
         - gelu
         - sigmoid
         - tanh
     min_neurons: 1
     max_neurons: 100
     step_neurons: 1
-    local_patience: 2
+    local_patience: 20
     global_patience: 2
     transform_data_strategy: append_original_input
     loss_rel_tol: 0.01
+    min_improvement: 0.001
     device: "cuda"
 
 hydra:
-  sweep:
-    dir: outputs/${training.project_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${training.dataset}/${training.experiment_num}/
-    subdir: ${training.experiment_num}
+    sweep:
+        dir: outputs/${training.project_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}/${training.dataset}/${training.experiment_num}/
+        subdir: ${training.experiment_num}

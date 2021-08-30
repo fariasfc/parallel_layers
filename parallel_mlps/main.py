@@ -93,6 +93,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         global_patience=cfg.model.global_patience,
         transform_data_strategy=cfg.model.transform_data_strategy,
         loss_rel_tol=cfg.model.loss_rel_tol,
+        min_improvement=cfg.model.min_improvement,
         device=cfg.model.device,
         random_state=random_state,
         logger=logger,
@@ -132,7 +133,8 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
     wandb.run.summary.update(
         {
             "training_time": end - start,
-            "architecture": auto_constructive.get_best_model_arch()
+            "architecture": auto_constructive.get_best_model_arch(),
+            "num_trained_mlps": auto_constructive.num_trained_mlps
         }
     )
 

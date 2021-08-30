@@ -37,6 +37,7 @@ class ModelConfig:
     global_patience: int
     transform_data_strategy: str
     loss_rel_tol: float
+    min_improvement: float
     device: str
 
 

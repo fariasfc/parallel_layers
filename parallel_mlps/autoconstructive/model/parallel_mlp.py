@@ -106,32 +106,22 @@ class ParallelMLPs(nn.Module):
         if layer_ids == None:
             layer_ids = self.unique_model_ids
 
+        start = 0
         with torch.no_grad():
-            # with Pool(processes=8) as pool:
-            #     pool.map(partial(helpers.reset_parameters_model,hidden_layer=self.hidden_layer, hidden_neuron__model_id=self.hidden_neuron__model_id, weight=self.weight, bias=self.bias), layer_ids)
-            # Parallel(n_jobs=8)(delayed(lambda layer_id: helpers.reset_parameters_model(self.hidden_layer, self.hidden_neuron__model_id, self.weight, self.bias, layer_id))(i) for i in layer_ids)
-            for layer_id in layer_ids:
-                hidden_mask = self.hidden_neuron__model_id == layer_id
-                hidden_w = self.hidden_layer.weight[hidden_mask, :]
-                hidden_b = self.hidden_layer.bias[hidden_mask]
+            for layer_id, nb_hidden in enumerate(self.model_id__num_hidden_neurons):
+                end = start + nb_hidden
+                hidden_w = self.hidden_layer.weight[start:end, :]
+                hidden_b = self.hidden_layer.bias[start:end]
 
-                out_w = self.weight[:, hidden_mask]
+                out_w = self.weight[:, start:end]
                 out_b = self.bias[layer_id, :]
 
-                def _init_weights(w, b):
+                for w, b in [(hidden_w, hidden_b), (out_w, out_b)]:
                     init.kaiming_uniform_(w, a=math.sqrt(5))
                     fan_in, _ = init._calculate_fan_in_and_fan_out(w)
                     bound = 1 / math.sqrt(fan_in)
                     init.uniform_(b, -bound, bound)
-                    return w, b
-
-                hidden_w, hidden_b = _init_weights(hidden_w, hidden_b)
-                self.hidden_layer.weight[hidden_mask, :] = hidden_w
-                self.hidden_layer.bias[hidden_mask] = hidden_b
-
-                out_w, out_b = _init_weights(out_w, out_b)
-                self.weight[:, hidden_mask] = out_w
-                self.bias[layer_id, :] = out_b
+                start = end
 
     def apply_activations(self, x: Tensor) -> Tensor:
         tensors = x.split(self.activations_split, dim=1)
@@ -186,7 +176,7 @@ class ParallelMLPs(nn.Module):
 
         return loss
 
-    def extract_mlp(self, model_id: int):
+    def extract_mlp(self, model_id: int) -> nn.Sequential:
         if model_id >= self.num_unique_models:
             raise ValueError(
                 f"model_id {model_id} > num_uniqe_models {self.num_unique_models}"

@@ -38,6 +38,7 @@ class AutoConstructive(nn.Module):
         global_patience: int = 2,
         transform_data_strategy: str = "append_original_input",
         loss_rel_tol: float = 0.05,
+        min_improvement: float=0.001,
         device: str = "cuda",
         random_state: int = 0,
         logger: Any = None,
@@ -61,6 +62,7 @@ class AutoConstructive(nn.Module):
         self.global_patience = global_patience
         self.transform_data_strategy = transform_data_strategy
         self.loss_rel_tol = loss_rel_tol
+        self.min_improvement = min_improvement
         self.device: str = device
         self.random_state = random_state
         torch.manual_seed(random_state)
@@ -76,6 +78,8 @@ class AutoConstructive(nn.Module):
         )
 
         self.best_model = None
+
+        self.num_trained_mlps = 0
 
     def _get_dataloader(self, x: Tensor, y: Tensor, shuffle=True):
         if self.all_data_to_device:
@@ -119,6 +123,8 @@ class AutoConstructive(nn.Module):
         # profiler.stop()
         # profiler.output_html()
 
+        self.num_trained_mlps += pmlps.num_unique_models
+
         self.logger.info(
             f"Created ParallelMLPs in {end-start} seconds with {pmlps.num_unique_models}, starting with {self.min_neurons} neurons to {self.max_neurons} and step {self.step_neurons}, with activations {self.activations}, repeated {self.repetitions}"
         )
@@ -143,6 +149,7 @@ class AutoConstructive(nn.Module):
         )
         best_validation_loss = torch.tensor(float("inf"))
         current_patience = torch.zeros(pmlps.num_unique_models)
+        total_local_resets = 0
 
         t = tqdm(range(self.num_epochs))
         for epoch in t:
@@ -163,7 +170,7 @@ class AutoConstructive(nn.Module):
                 best_validation_loss = epoch_best_validation_loss
                 best_mlp = pmlps.extract_mlp(
                     helpers.min_ix_argmin(
-                        reduced_validation_loss, pmlps.model_id__num_hidden_neurons
+                        reduced_validation_loss, pmlps.model_id__num_hidden_neurons, ignore_zeros=True
                     )
                 )
 
@@ -172,7 +179,9 @@ class AutoConstructive(nn.Module):
 
             model_ids_to_reset = torch.where(current_patience > self.local_patience)[0]
 
-            if len(model_ids_to_reset) > 0:
+            num_models_to_reset = len(model_ids_to_reset)
+            if num_models_to_reset > 0:
+                total_local_resets += num_models_to_reset
                 pmlps.reset_parameters(model_ids_to_reset)
                 current_patience[model_ids_to_reset] = 0
 
@@ -228,6 +237,9 @@ class AutoConstructive(nn.Module):
             #         "epoch": epoch,
             #     }
             # )
+
+        self.num_trained_mlps += total_local_resets
+        self.logger.info(f"Resetted {total_local_resets} mlps to construct this layer. num_trained_mlps so far: {self.num_trained_mlps}")
 
         return best_mlp, best_validation_loss
 
@@ -306,6 +318,8 @@ class AutoConstructive(nn.Module):
 
         x_train, y_train = self.__adjust_data(x_train, y_train)
         x_validation, y_validation = self.__adjust_data(x_validation, y_validation)
+        nb_labels = len(y_train.unique())
+        max_trivial_layers = 1
 
         if self.all_data_to_device:
             x_train = x_train.to(self.device)
@@ -326,52 +340,50 @@ class AutoConstructive(nn.Module):
         current_patience = 0
 
         while current_patience < self.global_patience:
-            improved_validation = False
             train_dataloader = self._get_dataloader(current_train_x, current_train_y)
             validation_dataloader = self._get_dataloader(
                 current_validation_x, current_validation_y
             )
 
-            best_mlp, best_validation_loss = self._get_best_mlp(
+            current_best_mlp, current_best_validation_loss = self._get_best_mlp(
                 train_dataloader=train_dataloader,
                 validation_dataloader=validation_dataloader,
             )
 
-            current_model.add_module(name=f"{len(current_model)}", module=best_mlp)
+            current_best_mlp_nb_hidden = current_best_mlp[0].out_features 
+            if current_best_mlp_nb_hidden <= nb_labels and len(current_model) > 0:
+                if max_trivial_layers == 0:
+                    self.logger.info(
+                        f"Current best_mlp hidden neurons: {current_best_mlp_nb_hidden} <= nb_labels {nb_labels}. Stop appending layers."
+                    )
+                    break
 
-            absolute_smaller_loss = best_validation_loss < global_best_validation_loss
+                max_trivial_layers -= 1
 
-            if absolute_smaller_loss:
-                almost_same_loss = math.isclose(
-                    best_validation_loss,
-                    global_best_validation_loss,
-                    rel_tol=self.loss_rel_tol,
+            current_model.add_module(name=f"{len(current_model)}", module=current_best_mlp)
+
+            percentage_of_global_best_loss = current_best_validation_loss / global_best_validation_loss
+            better_model = percentage_of_global_best_loss < (1-self.min_improvement)
+
+            self.logger.info(
+                f"percentage_of_global_best_loss({percentage_of_global_best_loss}) = current_best_validation_loss({current_best_validation_loss})/global_best_validation_loss({global_best_validation_loss}) < {self.min_improvement} (={better_model})."
+            )
+
+            if better_model:
+                self.best_model = deepcopy(current_model)
+                self.logger.info(
+                    f"Improved validation loss from {global_best_validation_loss} to {current_best_validation_loss}. Setting current_patience=0. Current best model with {len(self.best_model)-1} layers: ({self.best_model})."
                 )
-
-                if almost_same_loss:
-                    improved_validation = False
-
-                    self.logger.info(
-                        f"best_validation_loss {best_validation_loss} is almost the same as global_best_validation_loss {global_best_validation_loss} considering rel_tol={self.loss_rel_tol}."
-                    )
-                else:
-                    improved_validation = True
-                    self.logger.info(
-                        f"Improved validation loss from {global_best_validation_loss} to {best_validation_loss}. Added layer number {len(current_model)-1} ({current_model}). current_patience=0."
-                    )
-
-                    global_best_validation_loss = best_validation_loss
-                    current_patience = 0
-                    self.best_model = deepcopy(current_model)
-
-            if not improved_validation:
+                global_best_validation_loss = current_best_validation_loss
+                current_patience = 0
+            else:
                 current_patience += 1
                 self.logger.info(
                     f"No improvement. current_patience={current_patience}."
                 )
 
             current_train_x, current_validation_x = self._apply_forward_transform_data(
-                x_train, x_validation, current_train_x, current_validation_x, best_mlp
+                x_train, x_validation, current_train_x, current_validation_x, current_best_mlp
             )
 
     def get_best_model_arch(self):
