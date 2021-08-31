@@ -382,6 +382,11 @@ class AutoConstructiveModel(nn.Module):
                     f"No improvement. current_patience={current_patience}."
                 )
 
+            if current_best_validation_loss < eps:
+                self.logger.info(f"current_best_validation_loss ({current_best_validation_loss}) < eps ({eps}). Stopping fit.")
+                break
+
+
             current_train_x, current_validation_x = self._apply_forward_transform_data(
                 x_train, x_validation, current_train_x, current_validation_x, current_best_mlp
             )
