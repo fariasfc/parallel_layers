@@ -17,7 +17,7 @@ from experiment_utils import assess_model
 from omegaconf import DictConfig
 import hydra
 from omegaconf import OmegaConf
-from autoconstructive.model.autoconstructive import AutoConstructive
+from autoconstructive.model.autoconstructive_model import AutoConstructiveModel
 from data.dataloader import Dataloader
 import torch
 from torch import nn
@@ -76,7 +76,7 @@ def main(cfg: AutoConstructiveConfig) -> None:
 
 def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
     random_state = cfg.training.experiment_num
-    auto_constructive = AutoConstructive(
+    auto_constructive = AutoConstructiveModel(
         all_data_to_device=cfg.model.all_data_to_device,
         loss_function=resolve_loss_function(cfg.model.loss_function),
         optimizer_type=resolve_optimizer_type(cfg.model.optimizer_cls),

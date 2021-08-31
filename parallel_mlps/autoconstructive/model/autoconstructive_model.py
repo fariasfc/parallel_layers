@@ -19,7 +19,7 @@ from torch.utils.data.dataset import TensorDataset
 from tqdm import tqdm
 
 
-class AutoConstructive(nn.Module):
+class AutoConstructiveModel(nn.Module):
     def __init__(
         self,
         all_data_to_device: bool,
@@ -106,8 +106,7 @@ class AutoConstructive(nn.Module):
         in_features = train_dataloader.dataset[0][0].shape[0]
         out_features = len(train_dataloader.dataset.tensors[1].unique())
 
-        profiler = pyinstrument.Profiler()
-
+        # profiler = pyinstrument.Profiler()
         # profiler.start()
         start = perf_counter()
         pmlps = ParallelMLPs(
@@ -170,7 +169,7 @@ class AutoConstructive(nn.Module):
                 best_validation_loss = epoch_best_validation_loss
                 best_mlp = pmlps.extract_mlp(
                     helpers.min_ix_argmin(
-                        reduced_validation_loss, pmlps.model_id__num_hidden_neurons, ignore_zeros=True
+                        reduced_validation_loss, pmlps.model_id__num_hidden_neurons#, ignore_zeros=True
                     )
                 )
 
@@ -316,6 +315,7 @@ class AutoConstructive(nn.Module):
         y_validation: Tensor,
     ):
 
+        eps = 1e-5
         x_train, y_train = self.__adjust_data(x_train, y_train)
         x_validation, y_validation = self.__adjust_data(x_validation, y_validation)
         nb_labels = len(y_train.unique())
@@ -362,7 +362,7 @@ class AutoConstructive(nn.Module):
 
             current_model.add_module(name=f"{len(current_model)}", module=current_best_mlp)
 
-            percentage_of_global_best_loss = current_best_validation_loss / global_best_validation_loss
+            percentage_of_global_best_loss = current_best_validation_loss / (global_best_validation_loss+eps)
             better_model = percentage_of_global_best_loss < (1-self.min_improvement)
 
             self.logger.info(

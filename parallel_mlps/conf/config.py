@@ -57,6 +57,9 @@ def resolve_loss_function(loss_name):
 def resolve_optimizer_type(optimizer_name):
     if optimizer_name == "adam":
         return optim.Adam
+
+    elif optimizer_name == "sgd":
+        return optim.SGD
     #     return optim.Adam(**kwargs)
     else:
         ValueError(f"Optimizer {optimizer_name} not recognized.")
