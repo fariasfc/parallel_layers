@@ -58,7 +58,7 @@ def main(cfg: AutoConstructiveConfig) -> None:
             project=cfg.training.project_name,
             mode=wandb_mode,
             reinit=True,
-            name=f"{cfg.training.project_name}",
+            name=f"{cfg.training.dataset}_{cfg.training.experiment_num}",
         ):
             # config = wandb.config
             logger.info(f"wandb.run.name: {wandb.run.name}")
