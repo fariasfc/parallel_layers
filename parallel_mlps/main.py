@@ -28,9 +28,29 @@ import logging
 
 logger = logging.getLogger()
 
+def already_executed(cfg, run_name, logger):
+    wandb_api = wandb.Api()
+    runs_in_wandb = [
+        r
+        for r in wandb_api.runs(cfg.training.project_name)
+        if r.state in ["finished", "running"]
+        if run_name == r.name
+    ]
+
+    if len(runs_in_wandb) > 0:
+        logger.info(f"Run {run_name} already executed.")
+        return True
+
+    else:
+        return False
 
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: AutoConstructiveConfig) -> None:
+    run_name = f"{cfg.training.dataset}_{cfg.training.experiment_num}"
+
+    if already_executed(cfg, run_name, logger):
+        return
+
     print(OmegaConf.to_yaml(cfg))
     wandb_mode = os.environ["WANDB_MODE"]
     dl = Dataloader(
@@ -48,18 +68,6 @@ def main(cfg: AutoConstructiveConfig) -> None:
         distance_name="correlation",
     )
 
-    run_name = f"{cfg.training.dataset}_{cfg.training.experiment_num}"
-    wandb_api = wandb.Api()
-    runs_in_wandb = [
-        r
-        for r in wandb_api.runs(cfg.training.project_name)
-        if r.state in ["finished", "running"]
-        if run_name == r.name
-    ]
-
-    if len(runs_in_wandb) > 0:
-        logger.info(f"Run {run_name} already executed.")
-        return
 
     next_kfold = cfg.training.experiment_num % cfg.training.n_splits
     for i, data in enumerate(tqdm(splits, desc="KFold", total=cfg.training.n_splits)):
