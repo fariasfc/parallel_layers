@@ -48,6 +48,19 @@ def main(cfg: AutoConstructiveConfig) -> None:
         distance_name="correlation",
     )
 
+    run_name = f"{cfg.training.dataset}_{cfg.training.experiment_num}"
+    wandb_api = wandb.Api()
+    runs_in_wandb = [
+        r
+        for r in wandb_api.runs(cfg.training.project_name)
+        if r.state in ["finished", "running"]
+        if run_name == r.name
+    ]
+
+    if len(runs_in_wandb) > 0:
+        logger.info(f"Run {run_name} already executed.")
+        return
+
     next_kfold = cfg.training.experiment_num % cfg.training.n_splits
     for i, data in enumerate(tqdm(splits, desc="KFold", total=cfg.training.n_splits)):
         if i < next_kfold:
@@ -58,7 +71,7 @@ def main(cfg: AutoConstructiveConfig) -> None:
             project=cfg.training.project_name,
             mode=wandb_mode,
             reinit=True,
-            name=f"{cfg.training.dataset}_{cfg.training.experiment_num}",
+            name=run_name,
         ):
             # config = wandb.config
             logger.info(f"wandb.run.name: {wandb.run.name}")
