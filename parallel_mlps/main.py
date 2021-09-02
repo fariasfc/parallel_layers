@@ -50,7 +50,7 @@ def main(cfg: AutoConstructiveConfig) -> None:
 
     wandb_mode = os.environ["WANDB_MODE"]
 
-    if already_executed(cfg, run_name, logger):
+    if already_executed(cfg, run_name, logger, wandb_mode):
         return
 
     print(OmegaConf.to_yaml(cfg))
