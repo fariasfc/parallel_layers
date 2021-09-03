@@ -33,6 +33,7 @@ class AutoConstructiveModel(nn.Module):
         activations: List[str],
         min_neurons: int,
         max_neurons: int,
+        max_layers: int,
         step_neurons: int,
         local_patience: int = 10,
         global_patience: int = 2,
@@ -57,6 +58,7 @@ class AutoConstructiveModel(nn.Module):
         self.activations = activations
         self.min_neurons = min_neurons
         self.max_neurons = max_neurons
+        self.max_layers = max_layers
         self.step_neurons = step_neurons
         self.local_patience = local_patience
         self.global_patience = global_patience
@@ -339,7 +341,13 @@ class AutoConstructiveModel(nn.Module):
 
         current_patience = 0
 
-        while current_patience < self.global_patience:
+        while (
+            current_patience < self.global_patience and
+            (
+                self.max_layers is None or
+                len(current_model) < self.max_layers
+            )
+        ):
             train_dataloader = self._get_dataloader(current_train_x, current_train_y)
             validation_dataloader = self._get_dataloader(
                 current_validation_x, current_validation_y

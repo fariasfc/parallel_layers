@@ -28,6 +28,7 @@ model:
         - tanh
     min_neurons: 1
     max_neurons: 100
+    max_layers: null
     step_neurons: 1
     local_patience: 20
     global_patience: 2

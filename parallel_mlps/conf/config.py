@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from torch import optim
-from typing import List
+from typing import List, Optional
 import hydra
 from hydra.core.config_store import ConfigStore
 from torch import nn
@@ -32,6 +32,7 @@ class ModelConfig:
     activations: List[str]
     min_neurons: int
     max_neurons: int
+    max_layers: Optional[int]
     step_neurons: int
     local_patience: int
     global_patience: int
