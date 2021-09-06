@@ -1,5 +1,5 @@
 from copy import deepcopy
-import pyinstrument
+# import pyinstrument
 
 from time import perf_counter
 import wandb
@@ -400,7 +400,7 @@ class AutoConstructiveModel(nn.Module):
 
             if self.stack_hidden_layers:
                 current_best_mlp = current_best_mlp[:-1]
-                current_model = current_model[:-1]
+                current_model[-1] = current_model[-1][:-1]
 
             current_train_x, current_validation_x = self._apply_forward_transform_data(
                 x_train, x_validation, current_train_x, current_validation_x, current_best_mlp
