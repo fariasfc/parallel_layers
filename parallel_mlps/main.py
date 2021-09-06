@@ -111,6 +111,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         min_neurons=cfg.model.min_neurons,
         max_neurons=cfg.model.max_neurons,
         max_layers=cfg.model.max_layers,
+        stack_hidden_layers=cfg.model.stack_hidden_layers,
         step_neurons=cfg.model.step_neurons,
         local_patience=cfg.model.local_patience,
         global_patience=cfg.model.global_patience,
