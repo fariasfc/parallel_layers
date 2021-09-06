@@ -342,14 +342,16 @@ class AutoConstructiveModel(nn.Module):
         current_model = nn.Sequential()
 
         current_patience = 0
+        current_layer_index = 0
 
         while (
             current_patience < self.global_patience and
             (
                 self.max_layers is None or
-                len(current_model) < self.max_layers
+                current_layer_index < self.max_layers
             )
         ):
+            current_layer_index += 1
             train_dataloader = self._get_dataloader(current_train_x, current_train_y)
             validation_dataloader = self._get_dataloader(
                 current_validation_x, current_validation_y
