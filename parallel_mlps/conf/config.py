@@ -33,6 +33,7 @@ class ModelConfig:
     min_neurons: int
     max_neurons: int
     max_layers: Optional[int]
+    stack_hidden_layers: bool
     step_neurons: int
     local_patience: int
     global_patience: int

@@ -34,6 +34,7 @@ class AutoConstructiveModel(nn.Module):
         min_neurons: int,
         max_neurons: int,
         max_layers: int,
+        stack_hidden_layers: bool,
         step_neurons: int,
         local_patience: int = 10,
         global_patience: int = 2,
@@ -59,6 +60,7 @@ class AutoConstructiveModel(nn.Module):
         self.min_neurons = min_neurons
         self.max_neurons = max_neurons
         self.max_layers = max_layers
+        self.stack_hidden_layers = stack_hidden_layers
         self.step_neurons = step_neurons
         self.local_patience = local_patience
         self.global_patience = global_patience
@@ -394,6 +396,9 @@ class AutoConstructiveModel(nn.Module):
                 self.logger.info(f"current_best_validation_loss ({current_best_validation_loss}) < eps ({eps}). Stopping fit.")
                 break
 
+            if self.stack_hidden_layers:
+                current_best_mlp = current_best_mlp[:-1]
+                current_model = current_model[:-1]
 
             current_train_x, current_validation_x = self._apply_forward_transform_data(
                 x_train, x_validation, current_train_x, current_validation_x, current_best_mlp
