@@ -181,7 +181,10 @@ class AutoConstructiveModel(nn.Module):
                     validation_dataloader, loss_function, None, pmlps, validation_loss
                 )  # [num_models]
 
-            model__best_validation_loss[validation_loss.improved] = reduced_validation_loss[validation_loss.improved]
+                detached_reduced_train_loss = reduced_train_loss.detach().cpu()
+                detached_reduced_validation_loss = reduced_validation_loss.detach().cpu()
+
+            model__best_validation_loss[validation_loss.improved] = detached_reduced_validation_loss[validation_loss.improved]
 
             current_best_validation_loss, current_best_model_id = self._get_bests(pmlps, model__best_validation_loss)
 
@@ -204,8 +207,7 @@ class AutoConstructiveModel(nn.Module):
                 train_loss=epoch_best_train_loss,
                 best_validation_loss=best_validation_loss,
             )
-            detached_reduced_train_loss = reduced_train_loss.detach().cpu()
-            detached_reduced_validation_loss = reduced_validation_loss.detach().cpu()
+
             wandb.log(
                 {"train/loss/avg": detached_reduced_train_loss.mean(), "epoch": epoch}
             )
