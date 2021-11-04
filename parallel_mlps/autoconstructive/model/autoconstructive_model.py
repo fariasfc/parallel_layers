@@ -1,4 +1,6 @@
 from copy import deepcopy
+import pandas as pd
+from enum import Enum
 # import pyinstrument
 
 from time import perf_counter
@@ -18,6 +20,10 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 from tqdm import tqdm
 
+class StrategySelectBestEnum(str, Enum):
+    GLOBAL_BEST= 'global_best'
+    ARCHITECTURE_MEDIAN_BEST= 'architecture_median_best' #select architecture: groupby(architecture).median => Get best model among selected architecture
+    ARCHITECTURE_MEDIAN_MEDIAN= 'architecture_median_median' #select architecture: groupby(architecture).median => Get the median model among selected architecture
 
 class AutoConstructiveModel(nn.Module):
     def __init__(
@@ -39,6 +45,7 @@ class AutoConstructiveModel(nn.Module):
         local_patience: int = 10,
         global_patience: int = 2,
         transform_data_strategy: str = "append_original_input",
+        strategy_select_best: str = "architecture_median_best",
         loss_rel_tol: float = 0.05,
         min_improvement: float=0.001,
         device: str = "cuda",
@@ -65,6 +72,7 @@ class AutoConstructiveModel(nn.Module):
         self.local_patience = local_patience
         self.global_patience = global_patience
         self.transform_data_strategy = transform_data_strategy
+        self.strategy_select_best = strategy_select_best
         self.loss_rel_tol = loss_rel_tol
         self.min_improvement = min_improvement
         self.device: str = device
@@ -73,7 +81,7 @@ class AutoConstructiveModel(nn.Module):
         if logger is None:
             logger = logging.getLogger()
         self.logger = logger
-        self.hidden_neuron__model_id = build_model_ids(
+        self.hidden_neuron__model_id, self.output__model_id, self.output__architecture_id = build_model_ids(
             self.repetitions,
             self.activations,
             self.min_neurons,
@@ -81,9 +89,11 @@ class AutoConstructiveModel(nn.Module):
             self.step_neurons,
         )
 
+
         self.best_model = None
 
         self.num_trained_mlps = 0
+    
 
     def _get_dataloader(self, x: Tensor, y: Tensor, shuffle=True):
         if self.all_data_to_device:
@@ -117,6 +127,8 @@ class AutoConstructiveModel(nn.Module):
             in_features=in_features,
             out_features=out_features,
             hidden_neuron__model_id=self.hidden_neuron__model_id,
+            output__model_id=self.output__model_id,
+            output__architecture_id=self.output__architecture_id,
             activations=self.activations,
             bias=True,
             device=self.device,
@@ -151,6 +163,7 @@ class AutoConstructiveModel(nn.Module):
             ),
         )
         best_validation_loss = torch.tensor(float("inf"))
+        model__best_validation_loss = torch.ones(pmlps.num_unique_models) * float("inf")
         current_patience = torch.zeros(pmlps.num_unique_models)
         total_local_resets = 0
 
@@ -168,14 +181,13 @@ class AutoConstructiveModel(nn.Module):
                     validation_dataloader, loss_function, None, pmlps, validation_loss
                 )  # [num_models]
 
-            epoch_best_validation_loss = reduced_validation_loss.min().cpu().item()
-            if epoch_best_validation_loss < best_validation_loss:
-                best_validation_loss = epoch_best_validation_loss
-                best_mlp = pmlps.extract_mlp(
-                    helpers.min_ix_argmin(
-                        reduced_validation_loss, pmlps.model_id__num_hidden_neurons#, ignore_zeros=True
-                    )
-                )
+            model__best_validation_loss[validation_loss.improved] = reduced_validation_loss[validation_loss.improved]
+
+            current_best_validation_loss, current_best_model_id = self._get_bests(pmlps, model__best_validation_loss)
+
+            if current_best_validation_loss < best_validation_loss:
+                best_validation_loss = current_best_validation_loss
+                best_mlp = pmlps.extract_mlp(current_best_model_id)
 
             current_patience[~validation_loss.improved] += 1
             current_patience[validation_loss.improved] = 0
@@ -245,6 +257,23 @@ class AutoConstructiveModel(nn.Module):
         self.logger.info(f"Reset {total_local_resets} mlps to construct this layer. num_trained_mlps so far: {self.num_trained_mlps}")
 
         return best_mlp, best_validation_loss
+
+    def _get_bests(self, pmlps, model__validation_loss):
+        if self.strategy_select_best == StrategySelectBestEnum.GLOBAL_BEST:
+            best_validation_loss = model__validation_loss.min().cpu().item()
+            best_model_id = helpers.min_ix_argmin(
+                        model__validation_loss, pmlps.model_id__num_hidden_neurons#, ignore_zeros=True
+                    )
+        elif self.strategy_select_best == StrategySelectBestEnum.ARCHITECTURE_MEDIAN_BEST:
+            df = pd.DataFrame({'model_id': pmlps.output__model_id, 'architecture_id': pmlps.output__architecture_id, "validation_loss": model__validation_loss.cpu().numpy()})
+            best_architecture_id = df.groupby(["architecture_id"]).median()["validation_loss"].argmin()
+            df_architectures = df[df["architecture_id"] == best_architecture_id]
+            best_validation_loss = df_architectures["validation_loss"].min()
+            best_model_id = df_architectures[df_architectures['validation_loss'] == best_validation_loss]["model_id"].to_list()[0]
+        else:
+            raise RuntimeError(f"strategy_select_best {self.strategy_select_best} not recognized.")
+
+        return best_validation_loss, best_model_id
 
     def execute_loop(self, dataloader, loss_function, optimizer, pmlps, accumulator):
         accumulator.reset(reset_best=False)

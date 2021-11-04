@@ -38,6 +38,7 @@ class ModelConfig:
     local_patience: int
     global_patience: int
     transform_data_strategy: str
+    strategy_select_best: str
     loss_rel_tol: float
     min_improvement: float
     device: str

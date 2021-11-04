@@ -17,6 +17,7 @@ model:
     batch_size: 32
     num_workers: 0
     repetitions: 10
+    strategy_select_best: architecture_median_best #global_best
     activations:
         - identity
         - relu

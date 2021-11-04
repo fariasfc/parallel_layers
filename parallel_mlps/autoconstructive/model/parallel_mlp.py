@@ -1,5 +1,6 @@
 from copy import deepcopy
 from functools import partial
+from itertools import groupby
 from autoconstructive.utils import helpers
 from joblib import Parallel, delayed
 import numpy as np
@@ -23,6 +24,24 @@ def build_model_ids(
     max_neurons: int,
     step: int,
 ):
+    """Creates a list with model ids to relate to hidden representations.
+    1. Creates a list containing the number of hidden neurons for each architecture (independent of activation functions and/or repetitions)
+    using the following formula neurons_structures=range(min_neurons, max_neurons+1, step)
+    2. Calculates the number of independent models (parallel mlps) = len(neurons_structures) * len(activations) * repetitions
+
+    Raises:
+        ValueError: [description]
+        ValueError: [description]
+        RuntimeError: [description]
+        ValueError: [description]
+
+    Returns:
+        hidden_neurons__model_id: List indicating for each global neuron the model_id that it belongs to
+        output__model_id: List containing the id of the model for each output
+        output__architecture_id: List containing the id of the architecture (neuron structure AND activation function) that the output belongs.
+            Architectures with the same id means that it only differs the repetition number, but have equal neuron structure and activation function.
+    """
+
 
     if len(activation_functions) == 0:
         raise ValueError(
@@ -36,16 +55,20 @@ def build_model_ids(
     num_activations = len(activation_functions)
 
     neurons_structure = torch.arange(min_neurons, max_neurons + 1, step).tolist()
-    num_parallel_mlps = len(neurons_structure) * num_activations * repetitions
+    num_different_neurons_structures = len(neurons_structure)
+    num_parallel_mlps = num_different_neurons_structures * num_activations * repetitions
 
     i = 0
-    layer_ids = []
+    hidden_neuron__model_id = []
     while i < num_parallel_mlps:
         for structure in neurons_structure:
-            layer_ids += [i] * structure
+            hidden_neuron__model_id += [i] * structure
             i += 1
 
-    return layer_ids
+    output__model_id = [i[0] for i in groupby(hidden_neuron__model_id)]
+    output__architecture_id = output__model_id[:num_activations * num_different_neurons_structures] * repetitions
+
+    return hidden_neuron__model_id, output__model_id, output__architecture_id
 
 
 class ParallelMLPs(nn.Module):
@@ -54,6 +77,8 @@ class ParallelMLPs(nn.Module):
         in_features: int,
         out_features: int,
         hidden_neuron__model_id: List[int],
+        output__model_id: List[int],
+        output__architecture_id: List[int],
         activations: List[nn.Module],
         bias: bool = True,
         device: str = "cuda",
@@ -66,9 +91,13 @@ class ParallelMLPs(nn.Module):
         self.activations = activations
         self.logger = logger
 
+        # Mappings: index -> id
         self.hidden_neuron__model_id = (
             torch.Tensor(hidden_neuron__model_id).long().to(self.device)
         )
+        self.output__model_id = torch.Tensor(output__model_id).long().to(self.device)
+        self.output__architecture_id = torch.Tensor(output__architecture_id).long().to(self.device)
+
         self.total_hidden_neurons = len(self.hidden_neuron__model_id)
         self.unique_model_ids = sorted(list(set(hidden_neuron__model_id)))
         self.model_id__num_hidden_neurons = torch.from_numpy(
@@ -103,6 +132,9 @@ class ParallelMLPs(nn.Module):
         self.reset_parameters()
         self.to(device)
         self.logger.info(f"Model sent to {device}!")
+
+    def _build_outputs_ids(self):
+        return [i[0] for i in groupby(self.hidden_neuron__model_id)]
 
 
 
@@ -180,6 +212,8 @@ class ParallelMLPs(nn.Module):
         return loss
 
     def extract_mlp(self, model_id: int) -> nn.Sequential:
+        """Extracts a completely independent MLP.
+        """        
         if model_id >= self.num_unique_models:
             raise ValueError(
                 f"model_id {model_id} > num_uniqe_models {self.num_unique_models}"
