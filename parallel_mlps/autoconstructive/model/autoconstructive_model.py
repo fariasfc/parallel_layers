@@ -267,7 +267,7 @@ class AutoConstructiveModel(nn.Module):
                         model__validation_loss, pmlps.model_id__num_hidden_neurons#, ignore_zeros=True
                     )
         elif self.strategy_select_best == StrategySelectBestEnum.ARCHITECTURE_MEDIAN_BEST:
-            df = pd.DataFrame({'model_id': pmlps.output__model_id, 'architecture_id': pmlps.output__architecture_id, "validation_loss": model__validation_loss.cpu().numpy()})
+            df = pd.DataFrame({'model_id': pmlps.output__model_id.cpu(), 'architecture_id': pmlps.output__architecture_id.cpu(), "validation_loss": model__validation_loss.cpu()})
             best_architecture_id = df.groupby(["architecture_id"]).median()["validation_loss"].argmin()
             df_architectures = df[df["architecture_id"] == best_architecture_id]
             best_validation_loss = df_architectures["validation_loss"].min()
