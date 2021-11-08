@@ -5,6 +5,8 @@ from torch.functional import Tensor
 
 from enum import Enum
 
+from autoconstructive.utils import helpers
+
 
 class ObjectiveEnum(Enum):
     MAXIMIZATION = "maximization"
@@ -17,10 +19,12 @@ class Accumulator:
         name: str,
         objective: ObjectiveEnum = ObjectiveEnum.MINIMIZATION,
         reduction_fn: Callable[[Tensor], Tensor] = torch.mean,
+        min_relative_improvement: float = 0.0
     ) -> None:
         self.name = name
         self.objective = objective
         self.reduction_fn = reduction_fn
+        self.min_relative_improvement = min_relative_improvement
 
         self.tensors = []
         self.current_reduction = None
@@ -41,6 +45,15 @@ class Accumulator:
         self._improved = False
         self.is_dirty = True
 
+    def reset_best_from_ids(self, model_ids_to_reset):
+        if self.objective == ObjectiveEnum.MAXIMIZATION:
+            value = -float("inf")
+        else:
+            value = float("inf")
+
+        if self.best is not None:    
+            self.best[model_ids_to_reset] = value
+
     @property
     def improved(self):
         if self.is_dirty:
@@ -57,11 +70,14 @@ class Accumulator:
             self.best = self.current_reduction.clone()
             self._improved = torch.ones_like(self.current_reduction).bool()
 
-        elif self.objective == ObjectiveEnum.MAXIMIZATION:
-            self._improved = self.current_reduction > self.best
+        # elif self.objective == ObjectiveEnum.MAXIMIZATION:
+        #     self._improved = self.current_reduction > self.best
+        #     helpers.has_improved(self.current_reduction, self.best, self.min_improvement)
 
+        # else:
+        #     self._improved = self.current_reduction < self.best
         else:
-            self._improved = self.current_reduction < self.best
+            _, self._improved = helpers.has_improved(self.current_reduction, self.best, self.min_relative_improvement, self.objective)
 
         if torch.any(self._improved):
             self.best[self._improved] = self.current_reduction[self._improved]

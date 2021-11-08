@@ -101,7 +101,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
     auto_constructive = AutoConstructiveModel(
         all_data_to_device=cfg.model.all_data_to_device,
         loss_function=resolve_loss_function(cfg.model.loss_function),
-        optimizer_type=resolve_optimizer_type(cfg.model.optimizer_cls),
+        optimizer_name=cfg.model.optimizer_name,
         learning_rate=cfg.model.learning_rate,
         num_epochs=cfg.model.num_epochs,
         batch_size=cfg.model.batch_size,

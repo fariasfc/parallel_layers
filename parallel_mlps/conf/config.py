@@ -5,6 +5,7 @@ import hydra
 from hydra.core.config_store import ConfigStore
 from torch import nn
 from torch.nn.modules import loss
+from torch.optim.optimizer import Optimizer
 
 
 @dataclass
@@ -23,7 +24,7 @@ class TrainingConfig:
 class ModelConfig:
     all_data_to_device: bool
     loss_function: str
-    optimizer_cls: str
+    optimizer_name: str
     learning_rate: float
     num_epochs: int
     batch_size: int
@@ -57,7 +58,8 @@ def resolve_loss_function(loss_name):
         raise ValueError(f"Loss function {loss_name} not recognized.")
 
 
-def resolve_optimizer_type(optimizer_name):
+def resolve_optimizer_type(cfg):
+    optimizer_name = cfg.model.optimizer_cls
     if optimizer_name == "adam":
         return optim.Adam
 
@@ -65,7 +67,20 @@ def resolve_optimizer_type(optimizer_name):
         return optim.SGD
     #     return optim.Adam(**kwargs)
     else:
-        ValueError(f"Optimizer {optimizer_name} not recognized.")
+        raise ValueError(f"Optimizer {optimizer_name} not recognized.")
+
+def create_optimizer(optimizer_name, learning_rate, parameters) -> Optimizer:
+    if optimizer_name == "adam":
+        optimizer = optim.Adam(
+            params=parameters, lr=learning_rate
+            )
+    elif optimizer_name == "sgd":
+        optimizer = optim.SGD(params=parameters, lr=learning_rate)#, momentum=0.9, nesterov=True)
+    #     return optim.Adam(**kwargs)
+    else:
+        raise ValueError(f"Optimizer {optimizer_name} not recognized.")
+
+    return optimizer
 
 
 def resolve_activations(list_activations):

@@ -3,6 +3,7 @@ import pandas as pd
 from enum import Enum
 # import pyinstrument
 
+from conf import config
 from time import perf_counter
 import wandb
 import numpy as np
@@ -20,6 +21,8 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 from tqdm import tqdm
 
+from conf.config import create_optimizer
+
 class StrategySelectBestEnum(str, Enum):
     GLOBAL_BEST= 'global_best'
     ARCHITECTURE_MEDIAN_BEST= 'architecture_median_best' #select architecture: groupby(architecture).median => Get best model among selected architecture
@@ -30,7 +33,7 @@ class AutoConstructiveModel(nn.Module):
         self,
         all_data_to_device: bool,
         loss_function: nn.Module,
-        optimizer_type: Type,
+        optimizer_name: str,
         learning_rate: float,
         num_epochs: int,
         batch_size: int,
@@ -57,7 +60,7 @@ class AutoConstructiveModel(nn.Module):
         super().__init__()
         self.all_data_to_device = all_data_to_device
         self.loss_function = loss_function
-        self.optimizer_cls = optimizer_type
+        self.optimizer_name = optimizer_name
         self.learning_rate = learning_rate
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -144,9 +147,7 @@ class AutoConstructiveModel(nn.Module):
             f"Created ParallelMLPs in {end-start} seconds with {pmlps.num_unique_models}, starting with {self.min_neurons} neurons to {self.max_neurons} and step {self.step_neurons}, with activations {self.activations}, repeated {self.repetitions}"
         )
 
-        optimizer: Optimizer = self.optimizer_cls(
-            params=pmlps.parameters(), lr=self.learning_rate
-        )
+        optimizer: Optimizer = config.create_optimizer(self.optimizer_name, self.learning_rate, pmlps.parameters())
 
         train_loss = Accumulator(
             name="train_loss",
@@ -155,12 +156,13 @@ class AutoConstructiveModel(nn.Module):
                 torch.cat(individual_losses, dim=0), dim=0
             ),
         )
-        validation_loss = Accumulator(
+        epoch_validation_loss = Accumulator(
             name="validation_loss",
             objective=ObjectiveEnum.MINIMIZATION,
             reduction_fn=lambda individual_losses: torch.mean(
                 torch.cat(individual_losses, dim=0), dim=0
             ),
+            min_relative_improvement=self.min_improvement
         )
         best_validation_loss = torch.tensor(float("inf"))
         model__best_validation_loss = torch.ones(pmlps.num_unique_models) * float("inf")
@@ -170,37 +172,47 @@ class AutoConstructiveModel(nn.Module):
         t = tqdm(range(self.num_epochs))
         for epoch in t:
             self.train()
+            train_loss.reset(reset_best=False)
             reduced_train_loss = self.execute_loop(
                 train_dataloader, loss_function, optimizer, pmlps, train_loss
             )  # [num_models]
             epoch_best_train_loss = reduced_train_loss.min().cpu().item()
 
             self.eval()
+            epoch_validation_loss.reset(reset_best=False)
             with torch.no_grad():
                 reduced_validation_loss = self.execute_loop(
-                    validation_dataloader, loss_function, None, pmlps, validation_loss
+                    validation_dataloader, loss_function, None, pmlps, epoch_validation_loss
                 )  # [num_models]
 
                 detached_reduced_train_loss = reduced_train_loss.detach().cpu()
                 detached_reduced_validation_loss = reduced_validation_loss.detach().cpu()
 
-            model__best_validation_loss[validation_loss.improved] = detached_reduced_validation_loss[validation_loss.improved]
+            # TODO: ajustar para model__best_validation_loss usar o improved global (ja que estou resetando o best daquele modelo especifico quando paciencia estoura)
+            model__best_validation_loss[epoch_validation_loss.improved] = detached_reduced_validation_loss[epoch_validation_loss.improved]
 
             current_best_validation_loss, current_best_model_id = self._get_bests(pmlps, model__best_validation_loss)
 
-            if current_best_validation_loss < best_validation_loss:
+            percentage_diff, better_model = helpers.has_improved(current_best_validation_loss, best_validation_loss, self.min_improvement, epoch_validation_loss.objective)
+
+            # if current_best_validation_loss < best_validation_loss:
+            if better_model:
                 best_validation_loss = current_best_validation_loss
                 best_mlp = pmlps.extract_mlp(current_best_model_id)
 
-            current_patience[~validation_loss.improved] += 1
-            current_patience[validation_loss.improved] = 0
+            current_patience[~epoch_validation_loss.improved] += 1
+            current_patience[epoch_validation_loss.improved] = 0
 
             model_ids_to_reset = torch.where(current_patience > self.local_patience)[0]
 
             num_models_to_reset = len(model_ids_to_reset)
             if num_models_to_reset > 0:
+                # TODO: acompanhar resultado final de cada arquitetura para fazer uma media (rolling avg?) da performance
+                # daquela arquitetura (ja que varias simulacoes dela pode acontecer aqui)
+                epoch_validation_loss.reset_best_from_ids(model_ids_to_reset)
                 total_local_resets += num_models_to_reset
                 pmlps.reset_parameters(model_ids_to_reset)
+                # TODO: reset optimizer states
                 current_patience[model_ids_to_reset] = 0
 
             t.set_postfix(
@@ -278,7 +290,6 @@ class AutoConstructiveModel(nn.Module):
         return best_validation_loss, best_model_id
 
     def execute_loop(self, dataloader, loss_function, optimizer, pmlps, accumulator):
-        accumulator.reset(reset_best=False)
         for (x, y) in dataloader:
             x = x.to(self.device)
             y = y.to(self.device)
@@ -290,7 +301,7 @@ class AutoConstructiveModel(nn.Module):
             individual_losses = pmlps.calculate_loss(
                 loss_func=loss_function, preds=outputs, target=y
             )
-            accumulator.update(individual_losses)
+            accumulator.update(individual_losses.detach())
 
             loss = individual_losses.mean(
                 0
@@ -405,11 +416,12 @@ class AutoConstructiveModel(nn.Module):
 
             current_model.add_module(name=f"{len(current_model)}", module=current_best_mlp)
 
-            percentage_of_global_best_loss = current_best_validation_loss / (global_best_validation_loss+eps)
-            better_model = percentage_of_global_best_loss < (1-self.min_improvement)
+            # percentage_of_global_best_loss = current_best_validation_loss / (global_best_validation_loss+eps)
+            # better_model = percentage_of_global_best_loss < (1-self.min_improvement)
+            percentage_best_validation_loss, better_model = helpers.has_improved(current_best_validation_loss, global_best_validation_loss, self.min_improvement, ObjectiveEnum.MINIMIZATION, eps)
 
             self.logger.info(
-                f"percentage_of_global_best_loss({percentage_of_global_best_loss}) = current_best_validation_loss({current_best_validation_loss})/global_best_validation_loss({global_best_validation_loss}) < {1-self.min_improvement} (={better_model})."
+                f"percentage_of_global_best_loss({percentage_best_validation_loss}) = current_best_validation_loss({current_best_validation_loss})/global_best_validation_loss({global_best_validation_loss}) < {1-self.min_improvement} (={better_model})."
             )
 
             if better_model:

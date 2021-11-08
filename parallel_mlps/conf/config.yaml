@@ -1,5 +1,5 @@
 training:
-    data_home: "/home/fcf/projects/parallel_mlps/datasets/"
+    data_home: "/Users/fcf/projects/parallel_mlps/datasets/"
     n_splits: 10
     validation_rate_from_train: 0.25
 
@@ -11,13 +11,13 @@ training:
 model:
     all_data_to_device: True
     loss_function: cross_entropy
-    optimizer_cls: adam
+    optimizer_name: adam
     learning_rate: 1e-2 #3e-4
     num_epochs: 100
     batch_size: 32
     num_workers: 0
     repetitions: 10
-    strategy_select_best: architecture_median_best #global_best
+    strategy_select_best: global_best #carchitecture_median_best #global_best
     activations:
         - identity
         - relu
@@ -32,12 +32,12 @@ model:
     max_layers: null
     stack_hidden_layers: False
     step_neurons: 1
-    local_patience: 20
+    local_patience: 10
     global_patience: 2
     transform_data_strategy: append_original_input
     loss_rel_tol: 0.01
     min_improvement: 0.001
-    device: "cuda"
+    device: "cpu"
 
 hydra:
     sweep:
