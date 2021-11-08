@@ -1,5 +1,5 @@
 training:
-    data_home: "/Users/fcf/projects/parallel_mlps/datasets/"
+    data_home: "/home/fcf/projects/parallel_mlps/datasets/"
     n_splits: 10
     validation_rate_from_train: 0.25
 
@@ -37,7 +37,7 @@ model:
     transform_data_strategy: append_original_input
     loss_rel_tol: 0.01
     min_improvement: 0.001
-    device: "cpu"
+    device: "cuda"
 
 hydra:
     sweep:
