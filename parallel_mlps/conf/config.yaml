@@ -30,7 +30,7 @@ model:
         - tanh
     topk: 10
     min_neurons: 1
-    max_neurons: 10
+    max_neurons: 100
     max_layers: null
     stack_hidden_layers: False
     step_neurons: 1
