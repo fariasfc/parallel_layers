@@ -305,7 +305,7 @@ class AutoConstructiveModel(nn.Module):
             if any(better_models_mask):
                 better_models_ids = torch.nonzero(better_models_mask)
                 topk_indices = torch.topk(-model__current_best_validation_loss[better_models_mask], self.topk).indices
-                better_models_ids = better_models_ids[topk_indices]
+                better_models_ids = better_models_ids[topk_indices].cpu().numpy()
                 model__global_best_validation_loss[better_models_mask] = model__current_best_validation_loss[better_models_mask]
                 best_validation_loss = model__current_best_validation_loss.min()
                 current_best_mlps = self.pmlps.extract_mlps(better_models_ids)
