@@ -31,16 +31,19 @@ logger = logging.getLogger()
 def already_executed(cfg, run_name, logger, wandb_mode):
     if wandb_mode == "online":
         wandb_api = wandb.Api()
-        runs_in_wandb = [
-            r
-            for r in wandb_api.runs(cfg.training.project_name)
-            if r.state in ["finished", "running"]
-            if run_name == r.name
-        ]
+        try:
+            runs_in_wandb = [
+                r
+                for r in wandb_api.runs(cfg.training.project_name)
+                if r.state in ["finished", "running"]
+                if run_name == r.name
+            ]
 
-        if len(runs_in_wandb) > 0:
-            logger.info(f"Run {run_name} already executed.")
-            return True
+            if len(runs_in_wandb) > 0:
+                logger.info(f"Run {run_name} already executed.")
+                return True
+        except Exception as e:
+            logger.warning(e)
 
     return False
 
@@ -108,6 +111,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         num_workers=cfg.model.num_workers,
         repetitions=cfg.model.repetitions,
         activations=resolve_activations(cfg.model.activations),
+        topk=cfg.model.topk,
         min_neurons=cfg.model.min_neurons,
         max_neurons=cfg.model.max_neurons,
         max_layers=cfg.model.max_layers,
@@ -121,29 +125,36 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         device=cfg.model.device,
         random_state=random_state,
         logger=logger,
+        debug_test=cfg.training.debug_test
     )
 
     x_train = data["train"]["data"]
     y_train = data["train"]["target"]
+    y_train = y_train.squeeze()
     logger.info(f"Train set: {x_train.shape}")
 
     if "val" in data.keys():
         x_val = data["val"]["data"]
         y_val = data["val"]["target"]
+        y_val = y_val.squeeze()
         logger.info(f"Validation set: {x_val.shape}")
 
     else:
         x_val = None
         y_val = None
 
-    x_test = data["test"]["data"]
-    y_test = data["test"]["target"]
-
+    x_test= data["test"]["data"]
+    y_test= data["test"]["target"]
+    y_test= y_test.squeeze()
     logger.info(f"Test set: {x_test.shape}")
+    if cfg.training.debug_test:
+        x_test_debug = x_test
+        y_test_debug = y_test
 
-    y_train = y_train.squeeze()
-    y_val = y_val.squeeze()
-    y_test = y_test.squeeze()
+    else:
+        x_test_debug = None
+        y_test_debug = None
+
 
     start = perf_counter()
     auto_constructive.fit(
@@ -151,6 +162,8 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         y_train=y_train,
         x_validation=x_val,
         y_validation=y_val,
+        x_test=x_test_debug,
+        y_test=y_test_debug
     )
     end = perf_counter()
 
@@ -175,11 +188,12 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
                 y_val,
                 "val",
             )
-        log_results(
-            {"autoconstructive": auto_constructive.predict(x_test).cpu().numpy()},
-            y_test,
-            "test",
-        )
+        if x_test is not None:
+            log_results(
+                {"autoconstructive": auto_constructive.predict(x_test).cpu().numpy()},
+                y_test,
+                "test",
+            )
 
     evaluate_classic_models(
         x_train, y_train, x_val, y_val, x_test, y_test, random_state
@@ -215,19 +229,23 @@ def evaluate_classic_models(
             logits_val = model.predict_proba(x_validation)
             # logits_val = model.ohe.transform(logits_val[:, None]).toarray()
 
-        logits_test = model.predict_proba(x_test)
         # logits_test = model.ohe.transform(logits_test[:, None]).toarray()
 
         log_results({model_name: logits_train}, y_train, "train")
         log_results({model_name: logits_val}, y_validation, "val")
-        log_results({model_name: logits_test}, y_test, "test")
+        if x_test is not None:
+            logits_test = model.predict_proba(x_test)
+            log_results({model_name: logits_test}, y_test, "test")
 
 
-def log_results(logits, y, metric_prefix):
+def log_results(logits, y, metric_prefix, ignore_wandb=False):
     metrics = assess_model(logits, y, metric_prefix)
-    print(metrics)
-    for train_metric in metrics:
-        wandb.run.summary.update(train_metric)
+    if not ignore_wandb:
+        print(metrics)
+        for train_metric in metrics:
+            wandb.run.summary.update(train_metric)
+
+    return metrics
 
 
 if __name__ == "__main__":

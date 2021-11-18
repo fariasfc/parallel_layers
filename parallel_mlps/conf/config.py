@@ -18,6 +18,7 @@ class TrainingConfig:
 
     project_name: str
     validation_rate_from_train: float
+    debug_test: bool
 
 
 @dataclass
@@ -31,6 +32,7 @@ class ModelConfig:
     num_workers: int
     repetitions: int
     activations: List[str]
+    topk: int
     min_neurons: int
     max_neurons: int
     max_layers: Optional[int]

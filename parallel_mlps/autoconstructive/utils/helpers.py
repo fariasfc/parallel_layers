@@ -5,7 +5,7 @@ from torch.nn import init
 from autoconstructive.utils.accumulators import ObjectiveEnum
 
 
-def has_improved(current_best_losses, global_best_losses, min_relative_improvement, objective_enum=ObjectiveEnum.MINIMIZATION, eps=1e-5):
+def has_improved(current_best_losses, global_best_losses, min_relative_improvement, objective_enum=ObjectiveEnum.MINIMIZATION, eps=1e-5, topk=1):
     """Verify if the current_best_losses is better than global_best_losses given a min_relative_improvement.
 
     Args:
@@ -20,11 +20,11 @@ def has_improved(current_best_losses, global_best_losses, min_relative_improveme
     """    
     percentage_of_best_loss = current_best_losses / (global_best_losses+eps)
     if objective_enum == ObjectiveEnum.MINIMIZATION:
-        better_model = percentage_of_best_loss < (1-min_relative_improvement)
+        better_models_mask = percentage_of_best_loss < (1-min_relative_improvement)
     else:
-        better_model = percentage_of_best_loss > (1-min_relative_improvement)
+        better_models_mask = percentage_of_best_loss > (1-min_relative_improvement)
 
-    return percentage_of_best_loss, better_model
+    return percentage_of_best_loss, better_models_mask
 
 def min_ix_argmin(a, n_hidden, ignore_zeros=False, rtol=0):
     """Get the min value of a with the lowest n_hidden in case of draw.

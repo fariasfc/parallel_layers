@@ -201,7 +201,7 @@ def test_fail_build_model_ids():
 def test_parallel_single_mlps_forward(parallel_mlp_object: ParallelMLPs, X: Tensor):
     output = parallel_mlp_object(X)
     for i in parallel_mlp_object.unique_model_ids:
-        mlp = parallel_mlp_object.extract_mlp(i)
+        mlp = parallel_mlp_object.extract_mlps([i])
         output_mlp = mlp(X)
         assert torch.allclose(output[:, i, :], output_mlp)
 
@@ -214,7 +214,7 @@ def test_trainings(X, Y, parallel_mlp_object: ParallelMLPs):
     parallel_optimizer = Adam(params=parallel_mlp_object.parameters(), lr=lr)
 
     single_models = [
-        parallel_mlp_object.extract_mlp(i) for i in parallel_mlp_object.unique_model_ids
+        parallel_mlp_object.extract_mlps(i) for i in parallel_mlp_object.unique_model_ids
     ]
     single_optimizers = [
         Adam(params=model.parameters(), lr=lr) for model in single_models
@@ -251,7 +251,7 @@ def test_trainings(X, Y, parallel_mlp_object: ParallelMLPs):
             # Asserts
             assert torch.allclose(candidate_losses[i], loss, atol=atol, rtol=rtol)
 
-            m = parallel_mlp_object.extract_mlp(i)
+            m = parallel_mlp_object.extract_mlps(i)
             # assert torch.allclose(m[0].weight, model[0].weight, atol=atol, rtol=rtol)
             assert type(m[1]) == type(model[1])
             # assert torch.allclose(m[2].weight, model[2].weight, atol=atol, rtol=rtol)

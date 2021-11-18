@@ -15,6 +15,26 @@ from torch.nn.modules.linear import Linear
 from torch.nn.parameter import Parameter
 from torch.multiprocessing import Pool, set_start_method, freeze_support
 
+class MLP(nn.Module):
+    def __init__(self, hidden_layer, out_layer, activation, model_id, metadata, device):
+        super().__init__()
+        self.hidden_layer = hidden_layer
+        self.out_layer = out_layer
+        self.activation = activation
+        self.model_id = model_id
+        self.metadata = metadata
+        self.device = device
+
+    @property
+    def out_features(self):
+        return self.out_layer.out_features
+
+    def forward(self, x):
+        x = self.hidden_layer(x)
+        x = self.activation(x)
+        x = self.out_layer(x)
+
+        return x
 
 
 def build_model_ids(
@@ -211,41 +231,44 @@ class ParallelMLPs(nn.Module):
 
         return loss
 
-    def extract_mlp(self, model_id: int) -> nn.Sequential:
+    def extract_mlps(self, model_ids: List[int]) -> List[MLP]:
         """Extracts a completely independent MLP.
         """        
-        if model_id >= self.num_unique_models:
+        if max(model_ids) >= self.num_unique_models:
             raise ValueError(
-                f"model_id {model_id} > num_uniqe_models {self.num_unique_models}"
+                f"model_id {max(model_ids)} > num_uniqe_models {self.num_unique_models}"
             )
 
+        mlps = []
         with torch.no_grad():
-            model_neurons = self.hidden_neuron__model_id == model_id
-            hidden_weight = self.hidden_layer.weight[model_neurons, :]
-            hidden_bias = self.hidden_layer.bias[model_neurons]
+            for model_id in model_ids:
+                model_neurons = self.hidden_neuron__model_id == model_id
+                hidden_weight = self.hidden_layer.weight[model_neurons, :]
+                hidden_bias = self.hidden_layer.bias[model_neurons]
 
-            out_weight = self.weight[:, model_neurons]
-            out_bias = self.bias[model_id, :]
+                out_weight = self.weight[:, model_neurons]
+                out_bias = self.bias[model_id, :]
 
-            hidden_layer = nn.Linear(
-                in_features=hidden_weight.shape[1], out_features=hidden_weight.shape[0]
-            )
-            activation_index = (
-                torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
-                // self.activations_split
-            )
-            activation = deepcopy(self.activations[activation_index])
-            out_layer = nn.Linear(
-                in_features=hidden_layer.out_features, out_features=self.out_features
-            )
+                hidden_layer = nn.Linear(
+                    in_features=hidden_weight.shape[1], out_features=hidden_weight.shape[0]
+                )
+                activation_index = (
+                    torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
+                    // self.activations_split
+                )
+                activation = deepcopy(self.activations[activation_index])
+                out_layer = nn.Linear(
+                    in_features=hidden_layer.out_features, out_features=self.out_features
+                )
 
-            hidden_layer.weight[:, :] = hidden_weight.clone()
-            hidden_layer.bias[:] = hidden_bias.clone()
+                hidden_layer.weight[:, :] = hidden_weight.clone()
+                hidden_layer.bias[:] = hidden_bias.clone()
 
-            out_layer.weight[:, :] = out_weight.clone()
-            out_layer.bias[:] = out_bias.clone()
+                out_layer.weight[:, :] = out_weight.clone()
+                out_layer.bias[:] = out_bias.clone()
+                mlps.append(MLP(hidden_layer=hidden_layer, out_layer=out_layer, activation=activation, model_id=model_id, metadata={}, device=self.device).to(self.device))
 
-        return nn.Sequential(hidden_layer, activation, out_layer).to(self.device)
+        return mlps
 
     def extra_repr(self) -> str:
         return "in_features={}, out_features={}, bias={}".format(
