@@ -265,8 +265,8 @@ class AutoConstructiveModel(nn.Module):
             min_relative_improvement=self.min_improvement
         )
         best_validation_loss = torch.tensor(float("inf"))
-        model__current_best_validation_loss = torch.ones(self.pmlps.num_unique_models) * float("inf")
-        model__global_best_validation_loss = torch.ones(self.pmlps.num_unique_models) * float("inf")
+        model__current_best_validation_loss = torch.ones(self.pmlps.num_unique_models).to(self.device) * float("inf")
+        model__global_best_validation_loss = torch.ones(self.pmlps.num_unique_models).to(self.device) * float("inf")
         self.current_patience = torch.zeros(self.pmlps.num_unique_models)
         self.model__start_epoch = torch.zeros(self.pmlps.num_unique_models)
         self.total_local_resets = 0
@@ -305,7 +305,7 @@ class AutoConstructiveModel(nn.Module):
             if any(better_models_mask):
                 better_models_ids = torch.nonzero(better_models_mask)
                 topk_indices = torch.topk(-model__current_best_validation_loss[better_models_mask], self.topk).indices
-                better_models_ids = better_models_ids[topk_indices].cpu().numpy()
+                better_models_ids = better_models_ids[topk_indices]
                 model__global_best_validation_loss[better_models_mask] = model__current_best_validation_loss[better_models_mask]
                 best_validation_loss = model__current_best_validation_loss.min()
                 current_best_mlps = self.pmlps.extract_mlps(better_models_ids)
