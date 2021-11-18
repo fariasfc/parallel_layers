@@ -291,8 +291,8 @@ class AutoConstructiveModel(nn.Module):
                     self.validation_dataloader, loss_function, None, epoch_validation_loss
                 )  # [num_models]
 
-                detached_reduced_train_loss = reduced_train_loss.detach().cpu()
-                detached_reduced_validation_loss = reduced_validation_loss.detach().cpu()
+                detached_reduced_train_loss = reduced_train_loss.detach()
+                detached_reduced_validation_loss = reduced_validation_loss.detach()
             
             # TODO: ajustar para model__best_validation_loss usar o improved global (ja que estou resetando o best daquele modelo especifico quando paciencia estoura)
             model__current_best_validation_loss[epoch_validation_loss.improved] = detached_reduced_validation_loss[epoch_validation_loss.improved]
@@ -327,10 +327,10 @@ class AutoConstructiveModel(nn.Module):
             )
 
             wandb.log(
-                {"train/loss/avg": detached_reduced_train_loss.mean(), "epoch": epoch}
+                {"train/loss/avg": detached_reduced_train_loss.mean().cpu(), "epoch": epoch}
             )
             wandb.log(
-                {"train/loss/min": detached_reduced_train_loss.min(), "epoch": epoch}
+                {"train/loss/min": detached_reduced_train_loss.min().cpu(), "epoch": epoch}
             )
             # wandb.log(
             #     {
@@ -354,13 +354,13 @@ class AutoConstructiveModel(nn.Module):
             # )
             wandb.log(
                 {
-                    "validation/loss/avg": detached_reduced_validation_loss.mean(),
+                    "validation/loss/avg": detached_reduced_validation_loss.mean().cpu(),
                     "epoch": epoch,
                 }
             )
             wandb.log(
                 {
-                    "validation/loss/min": detached_reduced_validation_loss.min(),
+                    "validation/loss/min": detached_reduced_validation_loss.min().cpu(),
                     "epoch": epoch,
                 }
             )
