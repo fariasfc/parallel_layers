@@ -590,7 +590,11 @@ class AutoConstructiveModel(nn.Module):
                         (x.shape[0], self.pmlps.num_unique_models)
                     ).to(self.device)
                 individual_losses *= drop_samples.uniform_() > self.drop_samples
-                # individual_losses = individual_losses
+
+            # self.regularization=True
+            # if self.regularization:
+            #     self.pmlps.get_regularization_term()
+            # individual_losses = individual_losses
 
             accumulator.update(individual_losses.detach())
 

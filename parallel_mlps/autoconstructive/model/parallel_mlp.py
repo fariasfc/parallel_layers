@@ -6,7 +6,7 @@ from joblib import Parallel, delayed
 import numpy as np
 import math
 from typing import Any, Counter, List
-from torch import nn
+from torch import nn, random
 from torch._C import Value
 from torch.functional import Tensor
 from torch.nn import init
@@ -164,7 +164,12 @@ class ParallelMLPs(nn.Module):
             self.bias = None
             self.register_parameter("bias", None)
 
-        self.random_subspace = self._init_random_subspace(random_subspace)
+        self.random_subspace_strategy = random_subspace
+
+        self.random_subspace = nn.Parameter(
+            torch.ones_like(self.hidden_layer.weight),
+            requires_grad=False,
+        )
 
         self.reset_parameters()
         self.enforce_random_subspace()
@@ -202,6 +207,14 @@ class ParallelMLPs(nn.Module):
                 hidden_w = self.hidden_layer.weight[start:end, :]
                 hidden_b = self.hidden_layer.bias[start:end]
 
+                if self.random_subspace_strategy == "sqrt":
+                    num_used_features = max(1, int(np.sqrt(self.in_features)))
+                elif self.random_subspace_strategy == "fromsqrt":
+                    sqrt_value = max(1, int(np.sqrt(self.in_features)))
+                    num_used_features = max(
+                        sqrt_value, int(torch.rand(1) * self.in_features)
+                    )
+
                 out_w = self.weight[:, start:end]
                 out_b = self.bias[layer_id, :]
 
@@ -210,6 +223,15 @@ class ParallelMLPs(nn.Module):
                     fan_in, _ = init._calculate_fan_in_and_fan_out(w)
                     bound = 1 / math.sqrt(fan_in)
                     init.uniform_(b, -bound, bound)
+
+                if self.random_subspace_strategy is not None:
+                    not_used_features = torch.randperm(self.in_features)[
+                        num_used_features:
+                    ]
+
+                    hidden_w[:, not_used_features] = 0
+                    self.random_subspace[start:end, :] = 1
+                    self.random_subspace[start:end, not_used_features] = 0
 
     def apply_activations(self, x: Tensor) -> Tensor:
         tensors = x.split(self.activations_split, dim=1)
@@ -313,6 +335,25 @@ class ParallelMLPs(nn.Module):
                 )
 
         return mlps
+
+    # def get_regularization_term(self) -> torch.Tensor:
+    #     self.hidden_layer.weight
+    #     torch.zeros(
+    #         self.num_unique_models, self.out_features, device=self.device
+    #     ).scatter_add_()
+    #     # [batch_size, total_repetitions, num_architectures, out_features]
+    #     adjusted_out = (
+    #         torch.zeros(
+    #             batch_size, self.num_unique_models, self.out_features, device=x.device
+    #         ).scatter_add_(
+    #             1,
+    #             # self.hidden_neuron__layer_id,
+    #             self.hidden_neuron__model_id[None, :, None].expand(
+    #                 batch_size, -1, self.out_features
+    #             ),
+    #             x,
+    #         )
+    #     ) + self.bias[None, :, :]
 
     def extra_repr(self) -> str:
         return "in_features={}, out_features={}, bias={}".format(
