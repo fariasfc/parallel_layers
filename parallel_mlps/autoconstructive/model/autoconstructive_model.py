@@ -135,7 +135,7 @@ class AutoConstructiveModel(nn.Module):
         num_epochs: int,
         batch_size: int,
         drop_samples: float,
-        random_subspace: str,
+        input_perturbation: str,
         num_workers: int,
         repetitions: int,
         activations: List[str],
@@ -168,7 +168,7 @@ class AutoConstructiveModel(nn.Module):
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.drop_samples = drop_samples
-        self.random_subspace = random_subspace
+        self.input_perturbation = input_perturbation
         self.num_workers = num_workers
         self.repetitions = repetitions
         self.activations = activations
@@ -314,7 +314,7 @@ class AutoConstructiveModel(nn.Module):
             output__model_id=self.output__model_id,
             output__architecture_id=self.output__architecture_id,
             drop_samples=self.drop_samples,
-            random_subspace=self.random_subspace,
+            input_perturbation=self.input_perturbation,
             activations=self.activations,
             bias=True,
             device=self.device,
@@ -605,7 +605,7 @@ class AutoConstructiveModel(nn.Module):
             if optimizer:
                 loss.backward()
                 optimizer.step()
-                self.pmlps.enforce_random_subspace()
+                self.pmlps.enforce_input_perturbation()
 
         reduced_accumulator = accumulator.apply_reduction()
 

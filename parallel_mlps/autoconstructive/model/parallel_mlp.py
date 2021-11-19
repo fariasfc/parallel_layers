@@ -103,7 +103,7 @@ class ParallelMLPs(nn.Module):
         output__model_id: List[int],
         output__architecture_id: List[int],
         drop_samples: float,
-        random_subspace: str,
+        input_perturbation: str,
         activations: List[nn.Module],
         bias: bool = True,
         device: str = "cuda",
@@ -164,34 +164,35 @@ class ParallelMLPs(nn.Module):
             self.bias = None
             self.register_parameter("bias", None)
 
-        self.random_subspace_strategy = random_subspace
+        self.input_perturbation_strategy = input_perturbation
 
-        self.random_subspace = nn.Parameter(
+        self.input_perturbation = nn.Parameter(
             torch.ones_like(self.hidden_layer.weight),
             requires_grad=False,
         )
 
         self.reset_parameters()
-        self.enforce_random_subspace()
+        self.enforce_input_perturbation()
         self.to(device)
         self.logger.info(f"Model sent to {device}!")
 
-    def _init_random_subspace(self, random_subspace):
+    def _init_input_perturbation(self, input_perturbation):
         r = None
-        if random_subspace == "sqrt":
-            random_subspace_threshold = (
+        if input_perturbation == "sqrt":
+            input_perturbation_threshold = (
                 int(np.sqrt(self.in_features)) / self.in_features
             )
             r = nn.Parameter(
-                torch.rand_like(self.hidden_layer.weight) < random_subspace_threshold,
+                torch.rand_like(self.hidden_layer.weight)
+                < input_perturbation_threshold,
                 requires_grad=False,
             )
         return r
 
-    def enforce_random_subspace(self):
-        if self.random_subspace is not None:
+    def enforce_input_perturbation(self):
+        if self.input_perturbation is not None:
             with torch.no_grad():
-                self.hidden_layer.weight *= self.random_subspace
+                self.hidden_layer.weight *= self.input_perturbation
 
     def _build_outputs_ids(self):
         return [i[0] for i in groupby(self.hidden_neuron__model_id)]
@@ -207,14 +208,6 @@ class ParallelMLPs(nn.Module):
                 hidden_w = self.hidden_layer.weight[start:end, :]
                 hidden_b = self.hidden_layer.bias[start:end]
 
-                if self.random_subspace_strategy == "sqrt":
-                    num_used_features = max(1, int(np.sqrt(self.in_features)))
-                elif self.random_subspace_strategy == "fromsqrt":
-                    sqrt_value = max(1, int(np.sqrt(self.in_features)))
-                    num_used_features = max(
-                        sqrt_value, int(torch.rand(1) * self.in_features)
-                    )
-
                 out_w = self.weight[:, start:end]
                 out_b = self.bias[layer_id, :]
 
@@ -224,14 +217,33 @@ class ParallelMLPs(nn.Module):
                     bound = 1 / math.sqrt(fan_in)
                     init.uniform_(b, -bound, bound)
 
-                if self.random_subspace_strategy is not None:
-                    not_used_features = torch.randperm(self.in_features)[
-                        num_used_features:
-                    ]
+                self.reset_input_perturbation(start, end)
 
-                    hidden_w[:, not_used_features] = 0
-                    self.random_subspace[start:end, :] = 1
-                    self.random_subspace[start:end, not_used_features] = 0
+    def reset_input_perturbation(self, start, end):
+        hidden_w = self.hidden_layer.weight[start:end, :]
+        input_perturbation = self.input_perturbation[start:end, :]
+        input_perturbation[:, :] = 1
+        if "random_sparsity" in self.input_perturbation_strategy:
+            sparsity = float(
+                self.input_perturbation_strategy.replace("random_sparsity", "")
+            )
+            sparse_mask = torch.rand_like(hidden_w) < sparsity
+            hidden_w[:, :] = hidden_w[:, :] * sparse_mask
+            input_perturbation[:, :] = sparse_mask
+
+            return
+        elif self.input_perturbation_strategy == "sqrt":
+            num_used_features = max(1, int(np.sqrt(self.in_features)))
+        elif self.input_perturbation_strategy == "fromsqrt":
+            sqrt_value = max(1, int(np.sqrt(self.in_features)))
+            num_used_features = max(sqrt_value, int(torch.rand(1) * self.in_features))
+
+        if self.input_perturbation_strategy is not None:
+            not_used_features = torch.randperm(self.in_features)[num_used_features:]
+
+            hidden_w[:, not_used_features] = 0
+            self.input_perturbation[start:end, :] = 1
+            self.input_perturbation[start:end, not_used_features] = 0
 
     def apply_activations(self, x: Tensor) -> Tensor:
         tensors = x.split(self.activations_split, dim=1)

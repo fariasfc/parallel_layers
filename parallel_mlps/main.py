@@ -110,7 +110,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         num_epochs=cfg.training.num_epochs,
         batch_size=cfg.training.batch_size,
         drop_samples=cfg.training.drop_samples,
-        random_subspace=cfg.training.random_subspace,
+        input_perturbation=cfg.training.input_perturbation,
         num_workers=cfg.model.num_workers,
         repetitions=cfg.model.repetitions,
         activations=resolve_activations(cfg.model.activations),

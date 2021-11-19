@@ -23,7 +23,7 @@ class TrainingConfig:
     num_epochs: int
     batch_size: int
     drop_samples: float
-    random_subspace: str
+    input_perturbation: str
 
 
 @dataclass
