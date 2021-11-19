@@ -11,7 +11,7 @@ training:
     num_epochs: 100
     batch_size: 32
     drop_samples: 0.1
-    input_perturbation: random_sparsity0.1 #sqrt
+    input_perturbation: sqrt #random_sparsity0.1 #sqrt
 
     project_name: "novo_teste"
 model:
@@ -31,8 +31,8 @@ model:
         - gelu
         - sigmoid
         - tanh
-    topk: 10
-    output_confidence: True
+    topk: 100
+    output_confidence: False
     min_confidence: 0.8
     min_neurons: 1
     max_neurons: 100
