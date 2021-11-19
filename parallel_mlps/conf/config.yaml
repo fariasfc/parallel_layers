@@ -8,14 +8,17 @@ training:
 
     experiment_num: 0
 
+    num_epochs: 100
+    batch_size: 32
+    drop_samples: 0.1
+    random_subspace: sqrt
+
     project_name: "novo_teste"
 model:
     all_data_to_device: True
     loss_function: cross_entropy
     optimizer_name: adam
     learning_rate: 3e-4
-    num_epochs: 100
-    batch_size: 32
     num_workers: 0
     repetitions: 10
     strategy_select_best: global_best #carchitecture_median_best #global_best
@@ -29,6 +32,8 @@ model:
         - sigmoid
         - tanh
     topk: 10
+    output_confidence: True
+    min_confidence: 0.8
     min_neurons: 1
     max_neurons: 100
     max_layers: null

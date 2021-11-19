@@ -28,6 +28,7 @@ import logging
 
 logger = logging.getLogger()
 
+
 def already_executed(cfg, run_name, logger, wandb_mode):
     if wandb_mode == "online":
         wandb_api = wandb.Api()
@@ -46,6 +47,7 @@ def already_executed(cfg, run_name, logger, wandb_mode):
             logger.warning(e)
 
     return False
+
 
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: AutoConstructiveConfig) -> None:
@@ -71,7 +73,6 @@ def main(cfg: AutoConstructiveConfig) -> None:
         validation_rate_from_train=cfg.training.validation_rate_from_train,
         distance_name="correlation",
     )
-
 
     next_kfold = cfg.training.experiment_num % cfg.training.n_splits
     for i, data in enumerate(tqdm(splits, desc="KFold", total=cfg.training.n_splits)):
@@ -106,12 +107,16 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         loss_function=resolve_loss_function(cfg.model.loss_function),
         optimizer_name=cfg.model.optimizer_name,
         learning_rate=cfg.model.learning_rate,
-        num_epochs=cfg.model.num_epochs,
-        batch_size=cfg.model.batch_size,
+        num_epochs=cfg.training.num_epochs,
+        batch_size=cfg.training.batch_size,
+        drop_samples=cfg.training.drop_samples,
+        random_subspace=cfg.training.random_subspace,
         num_workers=cfg.model.num_workers,
         repetitions=cfg.model.repetitions,
         activations=resolve_activations(cfg.model.activations),
         topk=cfg.model.topk,
+        output_confidence=cfg.model.output_confidence,
+        min_confidence=cfg.model.min_confidence,
         min_neurons=cfg.model.min_neurons,
         max_neurons=cfg.model.max_neurons,
         max_layers=cfg.model.max_layers,
@@ -125,7 +130,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         device=cfg.model.device,
         random_state=random_state,
         logger=logger,
-        debug_test=cfg.training.debug_test
+        debug_test=cfg.training.debug_test,
     )
 
     x_train = data["train"]["data"]
@@ -143,9 +148,9 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         x_val = None
         y_val = None
 
-    x_test= data["test"]["data"]
-    y_test= data["test"]["target"]
-    y_test= y_test.squeeze()
+    x_test = data["test"]["data"]
+    y_test = data["test"]["target"]
+    y_test = y_test.squeeze()
     logger.info(f"Test set: {x_test.shape}")
     if cfg.training.debug_test:
         x_test_debug = x_test
@@ -155,7 +160,6 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         x_test_debug = None
         y_test_debug = None
 
-
     start = perf_counter()
     auto_constructive.fit(
         x_train=x_train,
@@ -163,7 +167,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         x_validation=x_val,
         y_validation=y_val,
         x_test=x_test_debug,
-        y_test=y_test_debug
+        y_test=y_test_debug,
     )
     end = perf_counter()
 
@@ -171,7 +175,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         {
             "training_time": end - start,
             "architecture": auto_constructive.get_best_model_arch(),
-            "num_trained_mlps": auto_constructive.num_trained_mlps
+            "num_trained_mlps": auto_constructive.num_trained_mlps,
         }
     )
 

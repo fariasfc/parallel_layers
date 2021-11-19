@@ -15,6 +15,7 @@ from torch.nn.modules.linear import Linear
 from torch.nn.parameter import Parameter
 from torch.multiprocessing import Pool, set_start_method, freeze_support
 
+
 class MLP(nn.Module):
     def __init__(self, hidden_layer, out_layer, activation, model_id, metadata, device):
         super().__init__()
@@ -62,7 +63,6 @@ def build_model_ids(
             Architectures with the same id means that it only differs the repetition number, but have equal neuron structure and activation function.
     """
 
-
     if len(activation_functions) == 0:
         raise ValueError(
             "At least one activation function must be passed. Try `nn.Identity()` if you want no activation."
@@ -86,7 +86,10 @@ def build_model_ids(
             i += 1
 
     output__model_id = [i[0] for i in groupby(hidden_neuron__model_id)]
-    output__architecture_id = output__model_id[:num_activations * num_different_neurons_structures] * repetitions
+    output__architecture_id = (
+        output__model_id[: num_activations * num_different_neurons_structures]
+        * repetitions
+    )
 
     return hidden_neuron__model_id, output__model_id, output__architecture_id
 
@@ -99,10 +102,12 @@ class ParallelMLPs(nn.Module):
         hidden_neuron__model_id: List[int],
         output__model_id: List[int],
         output__architecture_id: List[int],
+        drop_samples: float,
+        random_subspace: str,
         activations: List[nn.Module],
         bias: bool = True,
         device: str = "cuda",
-        logger: Any= None
+        logger: Any = None,
     ):
         super().__init__()
         self.device = device
@@ -110,13 +115,16 @@ class ParallelMLPs(nn.Module):
         self.out_features = out_features
         self.activations = activations
         self.logger = logger
+        self.drop_samples = drop_samples
 
         # Mappings: index -> id
         self.hidden_neuron__model_id = (
             torch.Tensor(hidden_neuron__model_id).long().to(self.device)
         )
         self.output__model_id = torch.Tensor(output__model_id).long().to(self.device)
-        self.output__architecture_id = torch.Tensor(output__architecture_id).long().to(self.device)
+        self.output__architecture_id = (
+            torch.Tensor(output__architecture_id).long().to(self.device)
+        )
 
         self.total_hidden_neurons = len(self.hidden_neuron__model_id)
         self.unique_model_ids = sorted(list(set(hidden_neuron__model_id)))
@@ -124,9 +132,16 @@ class ParallelMLPs(nn.Module):
             np.bincount(self.hidden_neuron__model_id.cpu().numpy())
         ).to(self.device)
         # self.model_id__start_neuron = torch.zeros_like(self.model_id__num_hidden_neurons)
-        self.model_id__start_idx = torch.cat([torch.tensor([0]).to(self.device), self.model_id__num_hidden_neurons.cumsum(0)[:-1]])
-        self.model_id__end_idx = self.model_id__start_idx + self.model_id__num_hidden_neurons
-        # self.model_id__start_neuron = 
+        self.model_id__start_idx = torch.cat(
+            [
+                torch.tensor([0]).to(self.device),
+                self.model_id__num_hidden_neurons.cumsum(0)[:-1],
+            ]
+        )
+        self.model_id__end_idx = (
+            self.model_id__start_idx + self.model_id__num_hidden_neurons
+        )
+        # self.model_id__start_neuron =
 
         # self.model_id__num_hidden_neurons = torch.bincount(
         #     self.hidden_neuron__model_id
@@ -149,14 +164,32 @@ class ParallelMLPs(nn.Module):
             self.bias = None
             self.register_parameter("bias", None)
 
+        self.random_subspace = self._init_random_subspace(random_subspace)
+
         self.reset_parameters()
+        self.enforce_random_subspace()
         self.to(device)
         self.logger.info(f"Model sent to {device}!")
 
+    def _init_random_subspace(self, random_subspace):
+        r = None
+        if random_subspace == "sqrt":
+            random_subspace_threshold = (
+                int(np.sqrt(self.in_features)) / self.in_features
+            )
+            r = nn.Parameter(
+                torch.rand_like(self.hidden_layer.weight) < random_subspace_threshold,
+                requires_grad=False,
+            )
+        return r
+
+    def enforce_random_subspace(self):
+        if self.random_subspace is not None:
+            with torch.no_grad():
+                self.hidden_layer.weight *= self.random_subspace
+
     def _build_outputs_ids(self):
         return [i[0] for i in groupby(self.hidden_neuron__model_id)]
-
-
 
     def reset_parameters(self, layer_ids=None):
         if layer_ids == None:
@@ -232,8 +265,7 @@ class ParallelMLPs(nn.Module):
         return loss
 
     def extract_mlps(self, model_ids: List[int]) -> List[MLP]:
-        """Extracts a completely independent MLP.
-        """        
+        """Extracts a completely independent MLP."""
         if max(model_ids) >= self.num_unique_models:
             raise ValueError(
                 f"model_id {max(model_ids)} > num_uniqe_models {self.num_unique_models}"
@@ -250,7 +282,8 @@ class ParallelMLPs(nn.Module):
                 out_bias = self.bias[model_id, :]
 
                 hidden_layer = nn.Linear(
-                    in_features=hidden_weight.shape[1], out_features=hidden_weight.shape[0]
+                    in_features=hidden_weight.shape[1],
+                    out_features=hidden_weight.shape[0],
                 )
                 activation_index = (
                     torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
@@ -258,7 +291,8 @@ class ParallelMLPs(nn.Module):
                 )
                 activation = deepcopy(self.activations[activation_index])
                 out_layer = nn.Linear(
-                    in_features=hidden_layer.out_features, out_features=self.out_features
+                    in_features=hidden_layer.out_features,
+                    out_features=self.out_features,
                 )
 
                 hidden_layer.weight[:, :] = hidden_weight.clone()
@@ -266,7 +300,17 @@ class ParallelMLPs(nn.Module):
 
                 out_layer.weight[:, :] = out_weight.clone()
                 out_layer.bias[:] = out_bias.clone()
-                mlps.append(MLP(hidden_layer=hidden_layer, out_layer=out_layer, activation=activation, model_id=model_id, metadata={}, device=self.device).to(self.device))
+
+                mlps.append(
+                    MLP(
+                        hidden_layer=hidden_layer,
+                        out_layer=out_layer,
+                        activation=activation,
+                        model_id=model_id,
+                        metadata={},
+                        device=self.device,
+                    ).to(self.device)
+                )
 
         return mlps
 

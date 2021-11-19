@@ -20,6 +20,11 @@ class TrainingConfig:
     validation_rate_from_train: float
     debug_test: bool
 
+    num_epochs: int
+    batch_size: int
+    drop_samples: float
+    random_subspace: str
+
 
 @dataclass
 class ModelConfig:
@@ -27,12 +32,12 @@ class ModelConfig:
     loss_function: str
     optimizer_name: str
     learning_rate: float
-    num_epochs: int
-    batch_size: int
     num_workers: int
     repetitions: int
     activations: List[str]
     topk: int
+    output_confidence: bool
+    min_confidence: float
     min_neurons: int
     max_neurons: int
     max_layers: Optional[int]
@@ -71,13 +76,14 @@ def resolve_optimizer_type(cfg):
     else:
         raise ValueError(f"Optimizer {optimizer_name} not recognized.")
 
+
 def create_optimizer(optimizer_name, learning_rate, parameters) -> Optimizer:
     if optimizer_name == "adam":
-        optimizer = optim.Adam(
-            params=parameters, lr=learning_rate
-            )
+        optimizer = optim.Adam(params=parameters, lr=learning_rate)
     elif optimizer_name == "sgd":
-        optimizer = optim.SGD(params=parameters, lr=learning_rate)#, momentum=0.9, nesterov=True)
+        optimizer = optim.SGD(
+            params=parameters, lr=learning_rate
+        )  # , momentum=0.9, nesterov=True)
     #     return optim.Adam(**kwargs)
     else:
         raise ValueError(f"Optimizer {optimizer_name} not recognized.")
