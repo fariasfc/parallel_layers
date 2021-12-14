@@ -113,6 +113,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         input_perturbation=cfg.training.input_perturbation,
         num_workers=cfg.model.num_workers,
         repetitions=cfg.model.repetitions,
+        repetitions_for_best_neuron=cfg.model.repetitions_for_best_neuron,
         activations=resolve_activations(cfg.model.activations),
         topk=cfg.model.topk,
         output_confidence=cfg.model.output_confidence,

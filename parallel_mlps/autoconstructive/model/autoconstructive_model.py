@@ -1,4 +1,6 @@
 from copy import deepcopy
+from conf.config import MAP_ACTIVATION
+from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
 import heapq
 import pandas as pd
 from enum import Enum
@@ -23,9 +25,10 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 from tqdm import tqdm
 
-from conf.config import create_optimizer
+from conf.config import MAP_ACTIVATION, create_optimizer
 from experiment_utils import assess_model
 
+eps = 1e-5
 
 class StrategySelectBestEnum(str, Enum):
     GLOBAL_BEST = "global_best"
@@ -83,7 +86,7 @@ class MyModel(nn.Module):
             self.class_avg_activations.append(predictions[rows_lb].mean())
             self.class_std_activations.append(predictions[rows_lb].std())
 
-    def abstain_models(self, confidences):
+    def maybe_abstain_models(self, confidences):
         if self.min_confidence is not None:
             abstain = confidences.max(-1)[0] < self.min_confidence
             mask_samples_all_models_abstained = abstain.prod(0).bool()
@@ -99,7 +102,7 @@ class MyModel(nn.Module):
                 model__predictions.append(module(x))
             x = torch.stack(model__predictions, dim=0)
 
-            x = self.abstain_models(x)
+            x = self.maybe_abstain_models(x)
 
             x = x.nanmean(0)
         elif isinstance(self.module, MLP):
@@ -138,6 +141,7 @@ class AutoConstructiveModel(nn.Module):
         input_perturbation: str,
         num_workers: int,
         repetitions: int,
+        repetitions_for_best_neuron: int,
         activations: List[str],
         topk: int,
         output_confidence: bool,
@@ -171,6 +175,7 @@ class AutoConstructiveModel(nn.Module):
         self.input_perturbation = input_perturbation
         self.num_workers = num_workers
         self.repetitions = repetitions
+        self.repetitions_for_best_neuron = repetitions_for_best_neuron
         self.activations = activations
         self.topk = topk
         self.output_confidence = output_confidence
@@ -291,6 +296,10 @@ class AutoConstructiveModel(nn.Module):
 
     def _get_best_mlps(
         self,
+        hidden_neuron__model_id: List[int],
+        output__model_id: List[int],
+        output__architecture_id: List[int],
+        activations: List[str],
         train_dataloader: DataLoader,
         validation_dataloader: DataLoader,
         test_dataloader: Optional[DataLoader],
@@ -310,12 +319,12 @@ class AutoConstructiveModel(nn.Module):
         self.pmlps = ParallelMLPs(
             in_features=in_features,
             out_features=out_features,
-            hidden_neuron__model_id=self.hidden_neuron__model_id,
-            output__model_id=self.output__model_id,
-            output__architecture_id=self.output__architecture_id,
+            hidden_neuron__model_id=hidden_neuron__model_id,
+            output__model_id=output__model_id,
+            output__architecture_id=output__architecture_id,
             drop_samples=self.drop_samples,
             input_perturbation=self.input_perturbation,
-            activations=self.activations,
+            activations=activations,
             bias=True,
             device=self.device,
             logger=self.logger,
@@ -503,9 +512,9 @@ class AutoConstructiveModel(nn.Module):
             #     }
             # )
 
-        not_exhausted_model_ids = torch.where(
-            self.current_patience <= self.local_patience
-        )[0]
+        # not_exhausted_model_ids = torch.where(
+        #     self.current_patience <= self.local_patience
+        # )[0]
         # self.append_to_validation_df(epoch_train_loss, epoch_validation_loss, not_exhausted_model_ids)
         # self.validation_df.to_csv("/tmp/validation_df.csv")
         self.num_trained_mlps += self.total_local_resets
@@ -516,7 +525,7 @@ class AutoConstructiveModel(nn.Module):
         # Removing priorities
         best_mlps = nn.ModuleList([tup[-1] for tup in best_mlps])
 
-        return best_mlps, best_validation_loss
+        return best_mlps, best_validation_loss, model__global_best_validation_loss
 
     def reset_exhausted_models(self, epoch_train_loss, epoch_validation_loss):
         model_ids_to_reset = torch.where(self.current_patience > self.local_patience)[0]
@@ -656,6 +665,77 @@ class AutoConstructiveModel(nn.Module):
 
         return x, y
 
+    def find_num_neurons(
+        self,
+        x_train: Tensor,
+        y_train: Tensor,
+        x_validation: Tensor,
+        y_validation: Tensor,
+        x_test: Optional[Tensor],
+        y_test: Optional[Tensor],
+    ):
+        skf = StratifiedKFold(
+            n_splits=2, shuffle=True, random_state=self.random_state
+        )
+
+        results_df = None
+        x = torch.cat((x_train, x_validation))
+        y = torch.cat((y_train, y_validation))
+
+        for i, (train_indices, validation_indices) in enumerate(
+            skf.split(x, y)
+        ):
+            x_train = x[train_indices]
+            y_train = y[train_indices]
+            x_validation = x[validation_indices]
+            y_validation = y[validation_indices]
+
+            if self.all_data_to_device:
+                x_train = x_train.to(self.device)
+                y_train = y_train.to(self.device)
+                x_validation = x_validation.to(self.device)
+                y_validation = y_validation.to(self.device)
+
+            train_dataloader = self._get_dataloader(x_train, y_train)
+            validation_dataloader = self._get_dataloader(
+                x_validation, y_validation
+            )
+
+            _, _, model__global_best_validation_loss  = self._get_best_mlps(
+                hidden_neuron__model_id=self.hidden_neuron__model_id,
+                output__model_id=self.output__model_id,
+                output__architecture_id=self.output__architecture_id,
+                activations=self.activations,
+                train_dataloader=train_dataloader,
+                validation_dataloader=validation_dataloader,
+                test_dataloader=None,
+            )
+
+            current_df = pd.DataFrame({"model_id": range(len(model__global_best_validation_loss)), "architecture_id": self.output__architecture_id, "loss": model__global_best_validation_loss.tolist()})
+            current_df['activation_name'] = current_df["model_id"].apply(lambda model_id: deepcopy(self.pmlps.get_activation_name_from_model_id(model_id)))
+            current_df['num_neurons'] = current_df['model_id'].apply(lambda model_id: self.pmlps.hidden_neuron__model_id[model_id].item())
+
+            if results_df is None:
+                results_df = current_df
+            else:
+                results_df = pd.concat((results_df, current_df))
+
+        grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
+        best_architecture_id = grouped_df[grouped_df['loss']==grouped_df['loss'].min()].index.item()
+        best = grouped_df[grouped_df['loss'] == grouped_df['loss'].min()].reset_index()
+
+        # model_id = (results_df[results_df['architecture_id'] == best_architecture_id]).index.min()
+
+        # best_num_hidden_neurons = self.pmlps.model_id__num_hidden_neurons[model_id]
+        # activation = 
+        num_neurons = int(best["num_neurons"].item())
+        activation_name = [MAP_ACTIVATION[best['activation_name'].item()]()]
+
+        return num_neurons, activation_name
+
+
+
+
     def fit(
         self,
         x_train: Tensor,
@@ -665,8 +745,6 @@ class AutoConstructiveModel(nn.Module):
         x_test: Optional[Tensor],
         y_test: Optional[Tensor],
     ):
-
-        eps = 1e-5
         x_train, y_train = self.__adjust_data(x_train, y_train)
         x_validation, y_validation = self.__adjust_data(x_validation, y_validation)
         if y_test is not None:
@@ -707,6 +785,9 @@ class AutoConstructiveModel(nn.Module):
             self.max_layers is None or current_layer_index < self.max_layers
         ):
             current_layer_index += 1
+
+            best_num_neurons, activations = self.find_num_neurons(x_train=current_train_x, y_train=current_train_y, x_validation=current_validation_x, y_validation=current_validation_y, x_test=current_test_x, y_test=current_test_y)
+
             train_dataloader = self._get_dataloader(current_train_x, current_train_y)
             validation_dataloader = self._get_dataloader(
                 current_validation_x, current_validation_y
@@ -717,7 +798,22 @@ class AutoConstructiveModel(nn.Module):
             else:
                 test_dataloader = None
 
-            current_best_mlps, current_best_validation_loss = self._get_best_mlps(
+            (
+                hidden_neuron__model_id,
+                output__model_id,
+                output__architecture_id,
+            ) = build_model_ids(
+                self.repetitions_for_best_neuron,
+                self.activations,
+                best_num_neurons,
+                best_num_neurons,
+                1,
+            )
+            current_best_mlps, current_best_validation_loss, model__global_best_validation_loss = self._get_best_mlps(
+                hidden_neuron__model_id=hidden_neuron__model_id,
+                output__model_id=output__model_id,
+                output__architecture_id=output__architecture_id,
+                activations=activations,
                 train_dataloader=train_dataloader,
                 validation_dataloader=validation_dataloader,
                 test_dataloader=test_dataloader,

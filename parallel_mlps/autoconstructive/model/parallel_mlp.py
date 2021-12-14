@@ -1,4 +1,5 @@
 from copy import deepcopy
+from conf.config import MAP_ACTIVATION
 from functools import partial
 from itertools import groupby
 from autoconstructive.utils import helpers
@@ -319,11 +320,7 @@ class ParallelMLPs(nn.Module):
                     in_features=hidden_weight.shape[1],
                     out_features=hidden_weight.shape[0],
                 )
-                activation_index = (
-                    torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
-                    // self.activations_split
-                )
-                activation = deepcopy(self.activations[activation_index])
+                activation = self.get_activation_from_model_id(model_id)
                 out_layer = nn.Linear(
                     in_features=hidden_layer.out_features,
                     out_features=self.out_features,
@@ -347,6 +344,36 @@ class ParallelMLPs(nn.Module):
                 )
 
         return mlps
+
+    def get_model_ids_from_architecture_id(self, architecture_id):
+        indexes = self.output__architecture_id == architecture_id
+        model_ids = self.output__model_id[indexes]
+        return model_ids.cpu().tolist()
+
+    def get_num_hidden_neurons_from_architecture_id(self, architecture_id):
+        model_id = self.get_model_ids_from_architecture_id(architecture_id)[0]
+        return self.get_num_hidden_neurons_from_model_id(model_id)
+
+    def get_num_hidden_neurons_from_model_id(self, model_id):
+        return ((self.hidden_neuron__model_id == model_id)).sum()
+
+    def get_architecture_id_from_model_id(self, model_id):
+        index = self.output__model_id == model_id
+        architecture_id = self.output__architecture_id[index][0]
+        return architecture_id
+
+    def get_activation_from_model_id(self, model_id):
+        activation_index = (
+                    torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
+                    // self.activations_split
+                )
+        activation = deepcopy(self.activations[activation_index])
+        return activation
+
+    def get_activation_name_from_model_id(self, model_id):
+        activation = self.get_activation_from_model_id(model_id)
+        activation_name = [k for (k,v) in MAP_ACTIVATION.items() if v == type(activation)][0]
+        return activation_name
 
     # def get_regularization_term(self) -> torch.Tensor:
     #     self.hidden_layer.weight

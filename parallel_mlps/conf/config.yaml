@@ -21,6 +21,7 @@ model:
     learning_rate: 3e-4
     num_workers: 0
     repetitions: 10
+    repetitions_for_best_neuron: 100
     strategy_select_best: global_best #carchitecture_median_best #global_best
     activations:
         - identity

@@ -34,6 +34,7 @@ class ModelConfig:
     learning_rate: float
     num_workers: int
     repetitions: int
+    repetitions_for_best_neuron: int
     activations: List[str]
     topk: int
     output_confidence: bool
@@ -90,28 +91,22 @@ def create_optimizer(optimizer_name, learning_rate, parameters) -> Optimizer:
 
     return optimizer
 
+MAP_ACTIVATION = {
+    "sigmoid": nn.Sigmoid,
+    "relu": nn.ReLU,
+    "tanh": nn.Tanh,
+    "selu": nn.SELU,
+    "leakyrelu": nn.LeakyReLU,
+    "identity": nn.Identity,
+    "elu": nn.ELU,
+    "gelu": nn.GELU
+}
 
 def resolve_activations(list_activations):
     act_list = []
     for act in list_activations:
-        if act == "relu":
-            act_list.append(nn.ReLU())
-
-        elif act == "sigmoid":
-            act_list.append(nn.Sigmoid())
-
-        elif act == "tanh":
-            act_list.append(nn.Tanh())
-        elif act == "selu":
-            act_list.append(nn.SELU())
-        elif act == "leakyrelu":
-            act_list.append(nn.LeakyReLU())
-        elif act == "identity":
-            act_list.append(nn.Identity())
-        elif act == "elu":
-            act_list.append(nn.ELU())
-        elif act == "gelu":
-            act_list.append(nn.GELU())
+        if act in MAP_ACTIVATION:
+            act_list.append(MAP_ACTIVATION[act]())
         else:
             raise ValueError(f"Activation {act} not recognized.")
 

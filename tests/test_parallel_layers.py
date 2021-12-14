@@ -77,7 +77,7 @@ def parallel_mlp_object(activation_functions, X):
 
 
 @pytest.mark.parametrize(
-    "activation_functions,repetitions,min_neurons,max_neurons,step,expected,start,end,expected_output_ids,expected_architecture_ids",
+    "activation_functions,repetitions,min_neurons,max_neurons,step,expected,start,end,expected_output_ids,expected_architecture_ids,architecture_id,model_id,expected_activation,expected_num_neurons",
     [
         (
             [nn.ReLU(), nn.Sigmoid()],
@@ -95,6 +95,12 @@ def parallel_mlp_object(activation_functions, X):
             # [0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17, ],
             # [0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17, ],
             # fmt: on
+            5, #architecture_id
+            11, #model_id
+            nn.Sigmoid(), #expected_activation
+            3, #expected_num_neurons
+            
+
         ),
         (
             [nn.ReLU(), nn.Sigmoid()],
@@ -109,6 +115,10 @@ def parallel_mlp_object(activation_functions, X):
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
             [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3],
             # fmt: on
+            2, #architecture_id
+            6, #model_id
+            nn.Sigmoid(), #expected_activation
+            1, #expected_num_neurons
         ),
         (
             [nn.ReLU(), nn.Sigmoid()],
@@ -123,6 +133,10 @@ def parallel_mlp_object(activation_functions, X):
             [0, 1, 2, 3, 4, 5],
             [0, 1, 0, 1, 0, 1],
             # fmt: on
+            0, #architecture_id
+            4, #model_id
+            nn.Sigmoid(), #expected_activation
+            3, #expected_num_neurons
         ),
         (
             [nn.ReLU(), nn.Sigmoid()],
@@ -137,6 +151,10 @@ def parallel_mlp_object(activation_functions, X):
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
             [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3],
             # fmt: on
+            0, #architecture_id
+            4, #model_id
+            nn.ReLU(), #expected_activation
+            2, #expected_num_neurons
         ),
         (
             [nn.ReLU(), nn.Tanh(), nn.Sigmoid()],
@@ -152,11 +170,15 @@ def parallel_mlp_object(activation_functions, X):
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
             [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5],
             # fmt: on
+            5, #architecture_id
+            11, #model_id
+            nn.Sigmoid(), #expected_activation
+            4, #expected_num_neurons
         ),
     ],
 )
 def test_build_model_ids(
-    activation_functions, repetitions, min_neurons, max_neurons, step, expected, start, end, expected_output_ids, expected_architecture_ids
+    activation_functions, repetitions, min_neurons, max_neurons, step, expected, start, end, expected_output_ids, expected_architecture_ids,architecture_id,model_id,expected_activation,expected_num_neurons,
 ):
     hidden_layer_ids, output_ids, architecture_ids = build_model_ids(
         repetitions=repetitions,
@@ -169,7 +191,11 @@ def test_build_model_ids(
 
     assert expected == hidden_layer_ids
     if start is not None:
-        pmlps = ParallelMLPs(N_FEATURES, N_OUTPUTS, hidden_layer_ids, output_ids, architecture_ids, activation_functions, logger=logger, device="cpu")
+        pmlps = ParallelMLPs(in_features=N_FEATURES, out_features=N_OUTPUTS, hidden_neuron__model_id=hidden_layer_ids, output__model_id=output_ids, output__architecture_id=architecture_ids, drop_samples=False, input_perturbation="sqrt", activations=activation_functions, logger=logger, device="cpu")
+        assert expected_num_neurons == pmlps.get_num_hidden_neurons_from_architecture_id(architecture_id)
+        assert expected_num_neurons == pmlps.get_num_hidden_neurons_from_model_id(model_id)
+        assert type(expected_activation) == type(pmlps.get_activation_from_model_id(model_id))
+        assert model_id in pmlps.get_model_ids_from_architecture_id(architecture_id)
         assert torch.all(pmlps.model_id__start_idx.cpu() == torch.tensor(start))
         assert torch.all(pmlps.model_id__end_idx.cpu() == torch.tensor(end))
         assert torch.all(pmlps.model_id__end_idx.cpu() == torch.tensor(end))
