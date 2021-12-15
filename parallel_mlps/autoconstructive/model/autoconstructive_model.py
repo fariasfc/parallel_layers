@@ -683,7 +683,7 @@ class AutoConstructiveModel(nn.Module):
         y = torch.cat((y_train, y_validation))
 
         for i, (train_indices, validation_indices) in enumerate(
-            skf.split(x, y)
+            skf.split(x.cpu(), y.cpu())
         ):
             x_train = x[train_indices]
             y_train = y[train_indices]
