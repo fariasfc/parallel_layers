@@ -143,7 +143,7 @@ class AutoConstructiveModel(nn.Module):
         repetitions: int,
         repetitions_for_best_neuron: int,
         activations: List[str],
-        topk: int,
+        topk: Optional[int],
         output_confidence: bool,
         min_confidence: float,
         min_neurons: int,
@@ -407,7 +407,8 @@ class AutoConstructiveModel(nn.Module):
                 model__global_best_validation_loss,
                 self.min_improvement,
                 epoch_validation_loss.objective,
-                self.topk,
+                eps=eps,
+                topk=self.topk,
             )
 
             # if current_best_validation_loss < best_validation_loss:
