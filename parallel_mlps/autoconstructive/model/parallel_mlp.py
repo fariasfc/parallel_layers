@@ -104,7 +104,7 @@ class ParallelMLPs(nn.Module):
         output__model_id: List[int],
         output__architecture_id: List[int],
         drop_samples: float,
-        input_perturbation: str,
+        input_perturbation_strategy: str,
         activations: List[nn.Module],
         bias: bool = True,
         device: str = "cuda",
@@ -165,11 +165,15 @@ class ParallelMLPs(nn.Module):
             self.bias = None
             self.register_parameter("bias", None)
 
-        self.input_perturbation_strategy = input_perturbation
+        self.input_perturbation_strategy = input_perturbation_strategy
 
-        self.input_perturbation = nn.Parameter(
-            torch.ones_like(self.hidden_layer.weight),
-            requires_grad=False,
+        self.input_perturbation = (
+            nn.Parameter(
+                torch.ones_like(self.hidden_layer.weight),
+                requires_grad=False,
+            )
+            if self.input_perturbation_strategy is not None
+            else None
         )
 
         self.reset_parameters()
@@ -218,7 +222,8 @@ class ParallelMLPs(nn.Module):
                     bound = 1 / math.sqrt(fan_in)
                     init.uniform_(b, -bound, bound)
 
-                self.reset_input_perturbation(start, end)
+                if self.input_perturbation_strategy is not None:
+                    self.reset_input_perturbation(start, end)
 
     def reset_input_perturbation(self, start, end):
         hidden_w = self.hidden_layer.weight[start:end, :]
@@ -364,15 +369,17 @@ class ParallelMLPs(nn.Module):
 
     def get_activation_from_model_id(self, model_id):
         activation_index = (
-                    torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
-                    // self.activations_split
-                )
+            torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
+            // self.activations_split
+        )
         activation = deepcopy(self.activations[activation_index])
         return activation
 
     def get_activation_name_from_model_id(self, model_id):
         activation = self.get_activation_from_model_id(model_id)
-        activation_name = [k for (k,v) in MAP_ACTIVATION.items() if v == type(activation)][0]
+        activation_name = [
+            k for (k, v) in MAP_ACTIVATION.items() if v == type(activation)
+        ][0]
         return activation_name
 
     # def get_regularization_term(self) -> torch.Tensor:
