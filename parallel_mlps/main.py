@@ -102,6 +102,11 @@ def main(cfg: AutoConstructiveConfig) -> None:
 
 def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
     random_state = cfg.training.experiment_num
+
+    neurons_structure = torch.arange(
+        cfg.model.min_neurons, cfg.model.max_neurons + 1, cfg.model.step_neurons
+    ).tolist()
+
     auto_constructive = AutoConstructiveModel(
         all_data_to_device=cfg.model.all_data_to_device,
         loss_function=resolve_loss_function(cfg.model.loss_function),
@@ -110,19 +115,17 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         num_epochs=cfg.training.num_epochs,
         batch_size=cfg.training.batch_size,
         drop_samples=cfg.training.drop_samples,
-        input_perturbation=cfg.training.input_perturbation,
+        input_perturbation_strategy=cfg.training.input_perturbation_strategy,
         num_workers=cfg.model.num_workers,
         repetitions=cfg.model.repetitions,
         repetitions_for_best_neuron=cfg.model.repetitions_for_best_neuron,
         activations=resolve_activations(cfg.model.activations),
+        neurons_structures=neurons_structure,
         topk=cfg.model.topk,
         output_confidence=cfg.model.output_confidence,
         min_confidence=cfg.model.min_confidence,
-        min_neurons=cfg.model.min_neurons,
-        max_neurons=cfg.model.max_neurons,
         max_layers=cfg.model.max_layers,
         stack_hidden_layers=cfg.model.stack_hidden_layers,
-        step_neurons=cfg.model.step_neurons,
         local_patience=cfg.model.local_patience,
         global_patience=cfg.model.global_patience,
         transform_data_strategy=cfg.model.transform_data_strategy,

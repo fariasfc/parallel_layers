@@ -32,7 +32,7 @@ model:
         - gelu
         - sigmoid
         - tanh
-    topk: 100
+    topk: 1
     output_confidence: False
     min_confidence: 0.8
     min_neurons: 1

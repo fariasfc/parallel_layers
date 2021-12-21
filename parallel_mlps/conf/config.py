@@ -23,7 +23,7 @@ class TrainingConfig:
     num_epochs: int
     batch_size: int
     drop_samples: float
-    input_perturbation_strategy: str
+    input_perturbation_strategy: Optional[str]
 
 
 @dataclass
@@ -91,6 +91,7 @@ def create_optimizer(optimizer_name, learning_rate, parameters) -> Optimizer:
 
     return optimizer
 
+
 MAP_ACTIVATION = {
     "sigmoid": nn.Sigmoid,
     "relu": nn.ReLU,
@@ -99,8 +100,9 @@ MAP_ACTIVATION = {
     "leakyrelu": nn.LeakyReLU,
     "identity": nn.Identity,
     "elu": nn.ELU,
-    "gelu": nn.GELU
+    "gelu": nn.GELU,
 }
+
 
 def resolve_activations(list_activations):
     act_list = []

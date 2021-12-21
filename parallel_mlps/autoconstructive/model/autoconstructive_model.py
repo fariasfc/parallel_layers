@@ -142,19 +142,17 @@ class AutoConstructiveModel(nn.Module):
         num_epochs: int,
         batch_size: int,
         drop_samples: float,
-        input_perturbation: str,
+        input_perturbation_strategy: Optional[str],
         num_workers: int,
         repetitions: int,
         repetitions_for_best_neuron: int,
         activations: List[str],
+        neurons_structures: List[int],
         topk: Optional[int],
         output_confidence: bool,
         min_confidence: float,
-        min_neurons: int,
-        max_neurons: int,
         max_layers: int,
         stack_hidden_layers: bool,
-        step_neurons: int,
         local_patience: int = 10,
         global_patience: int = 2,
         transform_data_strategy: str = "append_original_input",
@@ -176,19 +174,17 @@ class AutoConstructiveModel(nn.Module):
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.drop_samples = drop_samples
-        self.input_perturbation = input_perturbation
+        self.input_perturbation_strategy = input_perturbation_strategy
         self.num_workers = num_workers
         self.repetitions = repetitions
         self.repetitions_for_best_neuron = repetitions_for_best_neuron
         self.activations = activations
+        self.neurons_structures = neurons_structures
         self.topk = topk
         self.output_confidence = output_confidence
         self.min_confidence = min_confidence
-        self.min_neurons = min_neurons
-        self.max_neurons = max_neurons
         self.max_layers = max_layers
         self.stack_hidden_layers = stack_hidden_layers
-        self.step_neurons = step_neurons
         self.local_patience = local_patience
         self.global_patience = global_patience
         self.transform_data_strategy = transform_data_strategy
@@ -207,17 +203,6 @@ class AutoConstructiveModel(nn.Module):
         if logger is None:
             logger = logging.getLogger()
         self.logger = logger
-        (
-            self.hidden_neuron__model_id,
-            self.output__model_id,
-            self.output__architecture_id,
-        ) = build_model_ids(
-            self.repetitions,
-            self.activations,
-            self.min_neurons,
-            self.max_neurons,
-            self.step_neurons,
-        )
 
         self.best_model_sequential = None
 
@@ -300,10 +285,9 @@ class AutoConstructiveModel(nn.Module):
 
     def _get_best_mlps(
         self,
-        hidden_neuron__model_id: List[int],
-        output__model_id: List[int],
-        output__architecture_id: List[int],
+        neurons_structures: List[int],
         activations: List[str],
+        repetitions: int,
         train_dataloader: DataLoader,
         validation_dataloader: DataLoader,
         test_dataloader: Optional[DataLoader],
@@ -323,11 +307,10 @@ class AutoConstructiveModel(nn.Module):
         self.pmlps = ParallelMLPs(
             in_features=in_features,
             out_features=out_features,
-            hidden_neuron__model_id=hidden_neuron__model_id,
-            output__model_id=output__model_id,
-            output__architecture_id=output__architecture_id,
+            neurons_structures=neurons_structures,
+            repetitions=repetitions,
             drop_samples=self.drop_samples,
-            input_perturbation_strategy=self.input_perturbation,
+            input_perturbation_strategy=self.input_perturbation_strategy,
             activations=activations,
             bias=True,
             device=self.device,
@@ -340,7 +323,7 @@ class AutoConstructiveModel(nn.Module):
         self.num_trained_mlps += self.pmlps.num_unique_models
 
         self.logger.info(
-            f"Created ParallelMLPs in {end-start} seconds with {self.pmlps.num_unique_models}, starting with {self.min_neurons} neurons to {self.max_neurons} and step {self.step_neurons}, with activations {self.activations}, repeated {self.repetitions}"
+            f"Created ParallelMLPs in {end-start} seconds with {self.pmlps.num_unique_models} MLPs, with structure {self.neurons_structures}, with activations {self.activations}, repeated {self.repetitions}"
         )
 
         optimizer: Optimizer = config.create_optimizer(
@@ -562,8 +545,8 @@ class AutoConstructiveModel(nn.Module):
         ):
             df = pd.DataFrame(
                 {
-                    "model_id": self.pmlps.output__model_id.cpu(),
-                    "architecture_id": self.pmlps.output__architecture_id.cpu(),
+                    "model_id": self.pmlps.model_id.cpu(),
+                    "architecture_id": self.pmlps.model_id__architecture_id.cpu(),
                     "validation_loss": model__validation_loss.cpu(),
                 }
             )
@@ -703,10 +686,9 @@ class AutoConstructiveModel(nn.Module):
             validation_dataloader = self._get_dataloader(x_validation, y_validation)
 
             _, _, model__global_best_validation_loss = self._get_best_mlps(
-                hidden_neuron__model_id=self.hidden_neuron__model_id,
-                output__model_id=self.output__model_id,
-                output__architecture_id=self.output__architecture_id,
+                neurons_structures=self.neurons_structures,
                 activations=self.activations,
+                repetitions=self.repetitions,
                 train_dataloader=train_dataloader,
                 validation_dataloader=validation_dataloader,
                 test_dataloader=None,
@@ -715,7 +697,7 @@ class AutoConstructiveModel(nn.Module):
             current_df = pd.DataFrame(
                 {
                     "model_id": range(len(model__global_best_validation_loss)),
-                    "architecture_id": self.output__architecture_id,
+                    "architecture_id": self.pmlps.model_id__architecture_id.cpu().tolist(),
                     "loss": model__global_best_validation_loss.tolist(),
                 }
             )
@@ -735,17 +717,24 @@ class AutoConstructiveModel(nn.Module):
             else:
                 results_df = pd.concat((results_df, current_df))
 
-        grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
-        best_architecture_id = grouped_df[
-            grouped_df["loss"] == grouped_df["loss"].min()
-        ].index.item()
+        # activation_name appears here only because we need to get the name after. architecture_id would be enough
+        # to groupby activation_name also.
+        grouped_df = (
+            results_df.groupby(["architecture_id", "activation_name"])
+            .mean()
+            .sort_values("loss")
+        )
+        self.logger.info(f"find_num_neurons results:\n{grouped_df}")
+        # best_architecture_id = grouped_df[
+        #     grouped_df["loss"] == grouped_df["loss"].min()
+        # ].index.item()
         best = grouped_df[grouped_df["loss"] == grouped_df["loss"].min()].reset_index()
 
         # model_id = (results_df[results_df['architecture_id'] == best_architecture_id]).index.min()
 
         # best_num_hidden_neurons = self.pmlps.model_id__num_hidden_neurons[model_id]
         # activation =
-        num_neurons = int(best["num_neurons"].item())
+        num_neurons = [int(best["num_neurons"].item())]
         activation_name = [MAP_ACTIVATION[best["activation_name"].item()]()]
 
         return num_neurons, activation_name
@@ -823,26 +812,26 @@ class AutoConstructiveModel(nn.Module):
             else:
                 test_dataloader = None
 
-            (
-                hidden_neuron__model_id,
-                output__model_id,
-                output__architecture_id,
-            ) = build_model_ids(
-                self.repetitions_for_best_neuron,
-                self.activations,
-                best_num_neurons,
-                best_num_neurons,
-                1,
-            )
+            # (
+            #     hidden_neuron__model_id,
+            #     output__model_id,
+            #     output__architecture_id,
+            # ) = build_model_ids(
+            #     self.repetitions_for_best_neuron,
+            #     self.activations,
+            #     best_num_neurons,
+            #     best_num_neurons,
+            #     1,
+            # )
+
             (
                 current_best_mlps,
                 current_best_validation_loss,
                 model__global_best_validation_loss,
             ) = self._get_best_mlps(
-                hidden_neuron__model_id=hidden_neuron__model_id,
-                output__model_id=output__model_id,
-                output__architecture_id=output__architecture_id,
+                neurons_structures=best_num_neurons,
                 activations=activations,
+                repetitions=self.repetitions_for_best_neuron,
                 train_dataloader=train_dataloader,
                 validation_dataloader=validation_dataloader,
                 test_dataloader=test_dataloader,
