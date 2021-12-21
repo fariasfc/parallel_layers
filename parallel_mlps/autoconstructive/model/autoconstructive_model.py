@@ -724,7 +724,9 @@ class AutoConstructiveModel(nn.Module):
             .mean()
             .sort_values("loss")
         )
-        self.logger.info(f"find_num_neurons results:\n{grouped_df}")
+        self.logger.info(
+            f'find_num_neurons results:\n{results_df.groupby(["architecture_id", "activation_name"]).agg(["mean", "std"]).sort_values(("loss", "mean"))}'
+        )
         # best_architecture_id = grouped_df[
         #     grouped_df["loss"] == grouped_df["loss"].min()
         # ].index.item()

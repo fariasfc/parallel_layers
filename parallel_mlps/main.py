@@ -141,12 +141,20 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
     y_train = data["train"]["target"]
     y_train = y_train.squeeze()
     logger.info(f"Train set: {x_train.shape}")
+    y_train_counts = np.unique(y_train, return_counts=True)
+    logger.info(
+        f"Train set: {y_train_counts}: {y_train_counts[1]/y_train_counts[1].sum()}"
+    )
 
     if "val" in data.keys():
         x_val = data["val"]["data"]
         y_val = data["val"]["target"]
         y_val = y_val.squeeze()
         logger.info(f"Validation set: {x_val.shape}")
+        y_val_counts = np.unique(y_val, return_counts=True)
+        logger.info(
+            f"Validation set: {y_val_counts}: {y_val_counts[1]/y_val_counts[1].sum()}"
+        )
 
     else:
         x_val = None
@@ -156,6 +164,8 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
     y_test = data["test"]["target"]
     y_test = y_test.squeeze()
     logger.info(f"Test set: {x_test.shape}")
+    y_test_counts = np.unique(y_test, return_counts=True)
+    logger.info(f"Test set: {y_test_counts}: {y_test_counts[1]/y_test_counts[1].sum()}")
     if cfg.training.debug_test:
         x_test_debug = x_test
         y_test_debug = y_test

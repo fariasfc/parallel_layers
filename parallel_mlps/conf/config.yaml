@@ -33,7 +33,7 @@ model:
         - sigmoid
         - tanh
     topk: 1
-    output_confidence: False
+    output_confidence: False # used to abstain models in ensemble
     min_confidence: 0.8
     min_neurons: 1
     max_neurons: 100
