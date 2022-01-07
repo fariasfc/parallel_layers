@@ -1,5 +1,6 @@
 training:
     data_home: "~/fcf/projects/parallel_mlps/datasets/"
+    distance_name: "correlation"
     n_splits: 10
     validation_rate_from_train: 0.25
     debug_test: False

@@ -720,6 +720,7 @@ class AutoConstructiveModel(nn.Module):
             else:
                 results_df = pd.concat((results_df, current_df))
 
+        results_df.to_csv("results_df.csv")
         grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
         best_architecture_id = grouped_df[grouped_df['loss']==grouped_df['loss'].min()].index.item()
         best = grouped_df[grouped_df['loss'] == grouped_df['loss'].min()].reset_index()

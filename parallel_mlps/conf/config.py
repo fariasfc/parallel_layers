@@ -11,6 +11,7 @@ from torch.optim.optimizer import Optimizer
 @dataclass
 class TrainingConfig:
     dataset: str
+    distance_name: str
     data_home: str
     n_splits: int
 
@@ -91,6 +92,7 @@ def create_optimizer(optimizer_name, learning_rate, parameters) -> Optimizer:
 
     return optimizer
 
+
 MAP_ACTIVATION = {
     "sigmoid": nn.Sigmoid,
     "relu": nn.ReLU,
@@ -99,8 +101,9 @@ MAP_ACTIVATION = {
     "leakyrelu": nn.LeakyReLU,
     "identity": nn.Identity,
     "elu": nn.ELU,
-    "gelu": nn.GELU
+    "gelu": nn.GELU,
 }
+
 
 def resolve_activations(list_activations):
     act_list = []
