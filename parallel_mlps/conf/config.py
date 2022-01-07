@@ -11,7 +11,7 @@ from torch.optim.optimizer import Optimizer
 @dataclass
 class TrainingConfig:
     dataset: str
-    distance_name: str
+    distance_name: Optional[str]
     data_home: str
     n_splits: int
 
