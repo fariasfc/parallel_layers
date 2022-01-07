@@ -30,6 +30,7 @@ from experiment_utils import assess_model
 
 eps = 1e-5
 
+
 class StrategySelectBestEnum(str, Enum):
     GLOBAL_BEST = "global_best"
     ARCHITECTURE_MEDIAN_BEST = "architecture_median_best"  # select architecture: groupby(architecture).median => Get best model among selected architecture
@@ -54,6 +55,9 @@ class MyModel(nn.Module):
             self.device = self.module.device
         else:
             self.device = self.module[0].device
+
+    def __repr__(self):
+        return self.module.__repr__()
 
     @property
     def out_features(self):
@@ -143,7 +147,7 @@ class AutoConstructiveModel(nn.Module):
         repetitions: int,
         repetitions_for_best_neuron: int,
         activations: List[str],
-        topk: int,
+        topk: Optional[int],
         output_confidence: bool,
         min_confidence: float,
         min_neurons: int,
@@ -215,7 +219,7 @@ class AutoConstructiveModel(nn.Module):
             self.step_neurons,
         )
 
-        self.best_model = None
+        self.best_model_sequential = None
 
         self.num_trained_mlps = 0
 
@@ -323,7 +327,7 @@ class AutoConstructiveModel(nn.Module):
             output__model_id=output__model_id,
             output__architecture_id=output__architecture_id,
             drop_samples=self.drop_samples,
-            input_perturbation=self.input_perturbation,
+            input_perturbation_strategy=self.input_perturbation,
             activations=activations,
             bias=True,
             device=self.device,
@@ -407,7 +411,8 @@ class AutoConstructiveModel(nn.Module):
                 model__global_best_validation_loss,
                 self.min_improvement,
                 epoch_validation_loss.objective,
-                self.topk,
+                eps=eps,
+                topk=self.topk,
             )
 
             # if current_best_validation_loss < best_validation_loss:
@@ -674,9 +679,7 @@ class AutoConstructiveModel(nn.Module):
         x_test: Optional[Tensor],
         y_test: Optional[Tensor],
     ):
-        skf = StratifiedKFold(
-            n_splits=2, shuffle=True, random_state=self.random_state
-        )
+        skf = StratifiedKFold(n_splits=2, shuffle=True, random_state=self.random_state)
 
         results_df = None
         x = torch.cat((x_train, x_validation))
@@ -697,11 +700,9 @@ class AutoConstructiveModel(nn.Module):
                 y_validation = y_validation.to(self.device)
 
             train_dataloader = self._get_dataloader(x_train, y_train)
-            validation_dataloader = self._get_dataloader(
-                x_validation, y_validation
-            )
+            validation_dataloader = self._get_dataloader(x_validation, y_validation)
 
-            _, _, model__global_best_validation_loss  = self._get_best_mlps(
+            _, _, model__global_best_validation_loss = self._get_best_mlps(
                 hidden_neuron__model_id=self.hidden_neuron__model_id,
                 output__model_id=self.output__model_id,
                 output__architecture_id=self.output__architecture_id,
@@ -711,9 +712,23 @@ class AutoConstructiveModel(nn.Module):
                 test_dataloader=None,
             )
 
-            current_df = pd.DataFrame({"model_id": range(len(model__global_best_validation_loss)), "architecture_id": self.output__architecture_id, "loss": model__global_best_validation_loss.tolist()})
-            current_df['activation_name'] = current_df["model_id"].apply(lambda model_id: deepcopy(self.pmlps.get_activation_name_from_model_id(model_id)))
-            current_df['num_neurons'] = current_df['model_id'].apply(lambda model_id: self.pmlps.hidden_neuron__model_id[model_id].item())
+            current_df = pd.DataFrame(
+                {
+                    "model_id": range(len(model__global_best_validation_loss)),
+                    "architecture_id": self.output__architecture_id,
+                    "loss": model__global_best_validation_loss.tolist(),
+                }
+            )
+            current_df["activation_name"] = current_df["model_id"].apply(
+                lambda model_id: deepcopy(
+                    self.pmlps.get_activation_name_from_model_id(model_id)
+                )
+            )
+            current_df["num_neurons"] = current_df["model_id"].apply(
+                lambda model_id: self.pmlps.model_id__num_hidden_neurons[
+                    model_id
+                ].item()
+            )
 
             if results_df is None:
                 results_df = current_df
@@ -722,20 +737,19 @@ class AutoConstructiveModel(nn.Module):
 
         results_df.to_csv("results_df.csv")
         grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
-        best_architecture_id = grouped_df[grouped_df['loss']==grouped_df['loss'].min()].index.item()
-        best = grouped_df[grouped_df['loss'] == grouped_df['loss'].min()].reset_index()
+        best_architecture_id = grouped_df[
+            grouped_df["loss"] == grouped_df["loss"].min()
+        ].index.item()
+        best = grouped_df[grouped_df["loss"] == grouped_df["loss"].min()].reset_index()
 
         # model_id = (results_df[results_df['architecture_id'] == best_architecture_id]).index.min()
 
         # best_num_hidden_neurons = self.pmlps.model_id__num_hidden_neurons[model_id]
-        # activation = 
+        # activation =
         num_neurons = int(best["num_neurons"].item())
-        activation_name = [MAP_ACTIVATION[best['activation_name'].item()]()]
+        activation_name = [MAP_ACTIVATION[best["activation_name"].item()]()]
 
         return num_neurons, activation_name
-
-
-
 
     def fit(
         self,
@@ -787,7 +801,18 @@ class AutoConstructiveModel(nn.Module):
         ):
             current_layer_index += 1
 
-            best_num_neurons, activations = self.find_num_neurons(x_train=current_train_x, y_train=current_train_y, x_validation=current_validation_x, y_validation=current_validation_y, x_test=current_test_x, y_test=current_test_y)
+            best_num_neurons, activations = self.find_num_neurons(
+                x_train=current_train_x,
+                y_train=current_train_y,
+                x_validation=current_validation_x,
+                y_validation=current_validation_y,
+                x_test=current_test_x,
+                y_test=current_test_y,
+            )
+
+            self.logger.info(
+                f"Best architecture: {best_num_neurons}, activations: {activations}"
+            )
 
             train_dataloader = self._get_dataloader(current_train_x, current_train_y)
             validation_dataloader = self._get_dataloader(
@@ -810,7 +835,11 @@ class AutoConstructiveModel(nn.Module):
                 best_num_neurons,
                 1,
             )
-            current_best_mlps, current_best_validation_loss, model__global_best_validation_loss = self._get_best_mlps(
+            (
+                current_best_mlps,
+                current_best_validation_loss,
+                model__global_best_validation_loss,
+            ) = self._get_best_mlps(
                 hidden_neuron__model_id=hidden_neuron__model_id,
                 output__model_id=output__model_id,
                 output__architecture_id=output__architecture_id,
@@ -863,9 +892,9 @@ class AutoConstructiveModel(nn.Module):
             )
 
             if better_model:
-                self.best_model = deepcopy(current_model)
+                self.best_model_sequential = deepcopy(current_model)
                 self.logger.info(
-                    f"Improved validation loss from {global_best_validation_loss} to {current_best_validation_loss}. Setting current_patience=0. Current best model with {len(self.best_model)-1} layers: ({self.best_model})."
+                    f"Improved validation loss from {global_best_validation_loss} to {current_best_validation_loss}. Setting current_patience=0. Current best model with {len(self.best_model_sequential)-1} layers: ({self.best_model_sequential})."
                 )
                 global_best_validation_loss = current_best_validation_loss
                 current_patience = 0
@@ -904,19 +933,23 @@ class AutoConstructiveModel(nn.Module):
         if self.is_ensemble:
             return "ensemble"
         else:
-            arch = [self.best_model[0][0].in_features]
-            for sequential in self.best_model:
-                if hasattr(sequential[0], "out_features"):
-                    arch.append(sequential[0].out_features)
-            arch.append(self.best_model[-1][2].out_features)
+            arch = [
+                self.best_model_sequential[0].module[0].module.hidden_layer.in_features
+            ]
+            for model in self.best_model_sequential:
+                mlps = model.module
+                for mlp in mlps:
+                    arch.append(mlp.module.out_layer.in_features)
+
+            arch.append(mlp.module.out_layer.out_features)
             return arch
 
     def predict(self, x: Tensor):
         x, _ = self.__adjust_data(x, None)
         x = x.to(self.device)
         h = x
-        total_layers = len(self.best_model)
-        for i, layer in enumerate(self.best_model):
+        total_layers = len(self.best_model_sequential)
+        for i, layer in enumerate(self.best_model_sequential):
             h = layer(h)
 
             if i < total_layers - 1:

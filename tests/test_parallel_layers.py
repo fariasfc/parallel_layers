@@ -71,8 +71,11 @@ def parallel_mlp_object(activation_functions, X):
         hidden_neuron__model_id=hidden_neuron__model_id,
         output__model_id=outputs_ids,
         output__architecture_id=architecture_ids,
+        drop_samples=None,
+        input_perturbation_strategy=None,
         activations=activation_functions,
         logger=logger,
+        device="cpu",
     )
 
 
@@ -95,12 +98,10 @@ def parallel_mlp_object(activation_functions, X):
             # [0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17, ],
             # [0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5, 6, 7, 7, 8, 8, 8, 9, 10, 10, 11, 11, 11, 12, 13, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17, ],
             # fmt: on
-            5, #architecture_id
-            11, #model_id
-            nn.Sigmoid(), #expected_activation
-            3, #expected_num_neurons
-            
-
+            5,  # architecture_id
+            11,  # model_id
+            nn.Sigmoid(),  # expected_activation
+            3,  # expected_num_neurons
         ),
         (
             [nn.ReLU(), nn.Sigmoid()],
@@ -115,10 +116,10 @@ def parallel_mlp_object(activation_functions, X):
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
             [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3],
             # fmt: on
-            2, #architecture_id
-            6, #model_id
-            nn.Sigmoid(), #expected_activation
-            1, #expected_num_neurons
+            2,  # architecture_id
+            6,  # model_id
+            nn.Sigmoid(),  # expected_activation
+            1,  # expected_num_neurons
         ),
         (
             [nn.ReLU(), nn.Sigmoid()],
@@ -133,10 +134,10 @@ def parallel_mlp_object(activation_functions, X):
             [0, 1, 2, 3, 4, 5],
             [0, 1, 0, 1, 0, 1],
             # fmt: on
-            0, #architecture_id
-            4, #model_id
-            nn.Sigmoid(), #expected_activation
-            3, #expected_num_neurons
+            0,  # architecture_id
+            4,  # model_id
+            nn.Sigmoid(),  # expected_activation
+            3,  # expected_num_neurons
         ),
         (
             [nn.ReLU(), nn.Sigmoid()],
@@ -151,10 +152,10 @@ def parallel_mlp_object(activation_functions, X):
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
             [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3],
             # fmt: on
-            0, #architecture_id
-            4, #model_id
-            nn.ReLU(), #expected_activation
-            2, #expected_num_neurons
+            0,  # architecture_id
+            4,  # model_id
+            nn.ReLU(),  # expected_activation
+            2,  # expected_num_neurons
         ),
         (
             [nn.ReLU(), nn.Tanh(), nn.Sigmoid()],
@@ -170,15 +171,28 @@ def parallel_mlp_object(activation_functions, X):
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
             [0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5],
             # fmt: on
-            5, #architecture_id
-            11, #model_id
-            nn.Sigmoid(), #expected_activation
-            4, #expected_num_neurons
+            5,  # architecture_id
+            11,  # model_id
+            nn.Sigmoid(),  # expected_activation
+            4,  # expected_num_neurons
         ),
     ],
 )
 def test_build_model_ids(
-    activation_functions, repetitions, min_neurons, max_neurons, step, expected, start, end, expected_output_ids, expected_architecture_ids,architecture_id,model_id,expected_activation,expected_num_neurons,
+    activation_functions,
+    repetitions,
+    min_neurons,
+    max_neurons,
+    step,
+    expected,
+    start,
+    end,
+    expected_output_ids,
+    expected_architecture_ids,
+    architecture_id,
+    model_id,
+    expected_activation,
+    expected_num_neurons,
 ):
     hidden_layer_ids, output_ids, architecture_ids = build_model_ids(
         repetitions=repetitions,
@@ -188,19 +202,41 @@ def test_build_model_ids(
         step=step,
     )
 
-
     assert expected == hidden_layer_ids
     if start is not None:
-        pmlps = ParallelMLPs(in_features=N_FEATURES, out_features=N_OUTPUTS, hidden_neuron__model_id=hidden_layer_ids, output__model_id=output_ids, output__architecture_id=architecture_ids, drop_samples=False, input_perturbation="sqrt", activations=activation_functions, logger=logger, device="cpu")
-        assert expected_num_neurons == pmlps.get_num_hidden_neurons_from_architecture_id(architecture_id)
-        assert expected_num_neurons == pmlps.get_num_hidden_neurons_from_model_id(model_id)
-        assert type(expected_activation) == type(pmlps.get_activation_from_model_id(model_id))
+        pmlps = ParallelMLPs(
+            in_features=N_FEATURES,
+            out_features=N_OUTPUTS,
+            hidden_neuron__model_id=hidden_layer_ids,
+            output__model_id=output_ids,
+            output__architecture_id=architecture_ids,
+            drop_samples=False,
+            input_perturbation_strategy="sqrt",
+            activations=activation_functions,
+            logger=logger,
+            device="cpu",
+        )
+        assert (
+            expected_num_neurons
+            == pmlps.get_num_hidden_neurons_from_architecture_id(architecture_id)
+        )
+        assert expected_num_neurons == pmlps.get_num_hidden_neurons_from_model_id(
+            model_id
+        )
+        assert type(expected_activation) == type(
+            pmlps.get_activation_from_model_id(model_id)
+        )
         assert model_id in pmlps.get_model_ids_from_architecture_id(architecture_id)
         assert torch.all(pmlps.model_id__start_idx.cpu() == torch.tensor(start))
         assert torch.all(pmlps.model_id__end_idx.cpu() == torch.tensor(end))
         assert torch.all(pmlps.model_id__end_idx.cpu() == torch.tensor(end))
-        assert torch.all(pmlps.output__model_id.cpu() == torch.tensor(expected_output_ids))
-        assert torch.all(pmlps.output__architecture_id.cpu() == torch.tensor(expected_architecture_ids))
+        assert torch.all(
+            pmlps.output__model_id.cpu() == torch.tensor(expected_output_ids)
+        )
+        assert torch.all(
+            pmlps.output__architecture_id.cpu()
+            == torch.tensor(expected_architecture_ids)
+        )
     print(hidden_layer_ids)
 
 
@@ -227,12 +263,12 @@ def test_fail_build_model_ids():
 def test_parallel_single_mlps_forward(parallel_mlp_object: ParallelMLPs, X: Tensor):
     output = parallel_mlp_object(X)
     for i in parallel_mlp_object.unique_model_ids:
-        mlp = parallel_mlp_object.extract_mlps([i])
+        mlp = parallel_mlp_object.extract_mlps([i])[0]
         output_mlp = mlp(X)
         assert torch.allclose(output[:, i, :], output_mlp)
 
 
-def test_trainings(X, Y, parallel_mlp_object: ParallelMLPs):
+def test_trainings(X, Y, parallel_mlp_object):
     reproducibility()
     lr = 1
     atol = 1e-8
@@ -240,7 +276,8 @@ def test_trainings(X, Y, parallel_mlp_object: ParallelMLPs):
     parallel_optimizer = Adam(params=parallel_mlp_object.parameters(), lr=lr)
 
     single_models = [
-        parallel_mlp_object.extract_mlps(i) for i in parallel_mlp_object.unique_model_ids
+        parallel_mlp_object.extract_mlps([i])[0]
+        for i in parallel_mlp_object.unique_model_ids
     ]
     single_optimizers = [
         Adam(params=model.parameters(), lr=lr) for model in single_models
@@ -277,9 +314,9 @@ def test_trainings(X, Y, parallel_mlp_object: ParallelMLPs):
             # Asserts
             assert torch.allclose(candidate_losses[i], loss, atol=atol, rtol=rtol)
 
-            m = parallel_mlp_object.extract_mlps(i)
+            m = parallel_mlp_object.extract_mlps([i])
             # assert torch.allclose(m[0].weight, model[0].weight, atol=atol, rtol=rtol)
-            assert type(m[1]) == type(model[1])
+            assert type(m[0]) == type(model)
             # assert torch.allclose(m[2].weight, model[2].weight, atol=atol, rtol=rtol)
 
 

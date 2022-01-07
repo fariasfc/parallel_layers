@@ -24,7 +24,7 @@ class TrainingConfig:
     num_epochs: int
     batch_size: int
     drop_samples: float
-    input_perturbation: str
+    input_perturbation_strategy: str
 
 
 @dataclass
@@ -37,7 +37,7 @@ class ModelConfig:
     repetitions: int
     repetitions_for_best_neuron: int
     activations: List[str]
-    topk: int
+    topk: Optional[int]
     output_confidence: bool
     min_confidence: float
     min_neurons: int
