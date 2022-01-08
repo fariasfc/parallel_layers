@@ -5,7 +5,14 @@ from torch.nn import init
 from autoconstructive.utils.accumulators import ObjectiveEnum
 
 
-def has_improved(current_best_losses, global_best_losses, min_relative_improvement, objective_enum=ObjectiveEnum.MINIMIZATION, eps=1e-5, topk=1):
+def has_improved(
+    current_best_losses,
+    global_best_losses,
+    min_relative_improvement,
+    objective_enum=ObjectiveEnum.MINIMIZATION,
+    eps=1e-5,
+    topk=1,
+):
     """Verify if the current_best_losses is better than global_best_losses given a min_relative_improvement.
 
     Args:
@@ -17,14 +24,17 @@ def has_improved(current_best_losses, global_best_losses, min_relative_improveme
 
     Returns:
         [type]: [description]
-    """    
-    percentage_of_best_loss = current_best_losses / (global_best_losses+eps)
+    """
+    percentage_of_best_loss = current_best_losses / (global_best_losses + eps)
     if objective_enum == ObjectiveEnum.MINIMIZATION:
-        better_models_mask = percentage_of_best_loss < (1-min_relative_improvement)
+        better_models_mask = percentage_of_best_loss < (1 - min_relative_improvement)
     else:
-        better_models_mask = percentage_of_best_loss > (1-min_relative_improvement)
+        better_models_mask = percentage_of_best_loss > (1 - min_relative_improvement)
+
+    # current_best_losses.isinf()
 
     return percentage_of_best_loss, better_models_mask
+
 
 def min_ix_argmin(a, n_hidden, ignore_zeros=False, rtol=0):
     """Get the min value of a with the lowest n_hidden in case of draw.
@@ -59,8 +69,6 @@ def min_ix_argmin(a, n_hidden, ignore_zeros=False, rtol=0):
     return ix
 
 
-
-
 def _init_weights(w, b):
     init.kaiming_uniform_(w, a=math.sqrt(5))
     fan_in, _ = init._calculate_fan_in_and_fan_out(w)
@@ -68,14 +76,16 @@ def _init_weights(w, b):
     init.uniform_(b, -bound, bound)
     return w, b
 
-def reset_parameters_model(hidden_layer, hidden_neuron__model_id, weight, bias, layer_id: int):
+
+def reset_parameters_model(
+    hidden_layer, hidden_neuron__model_id, weight, bias, layer_id: int
+):
     hidden_mask = hidden_neuron__model_id == layer_id
     hidden_w = hidden_layer.weight[hidden_mask, :]
     hidden_b = hidden_layer.bias[hidden_mask]
 
     out_w = weight[:, hidden_mask]
     out_b = bias[layer_id, :]
-
 
     hidden_w, hidden_b = _init_weights(hidden_w, hidden_b)
     hidden_layer.weight[hidden_mask, :] = hidden_w

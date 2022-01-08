@@ -69,10 +69,16 @@ def main(cfg: AutoConstructiveConfig) -> None:
         one_hot_encode_output=False,
     )
 
-    splits = dl.get_splits_iter_regions(
-        validation_rate_from_train=cfg.training.validation_rate_from_train,
-        distance_name="correlation",
-    )
+    if cfg.training.distance_name is None:
+        splits = dl.get_splits_iter(
+            validation_rate_from_train=cfg.training.validation_rate_from_train,
+        )
+    else:
+
+        splits = dl.get_splits_iter_regions(
+            validation_rate_from_train=cfg.training.validation_rate_from_train,
+            distance_name="correlation",
+        )
 
     next_kfold = cfg.training.experiment_num % cfg.training.n_splits
     for i, data in enumerate(tqdm(splits, desc="KFold", total=cfg.training.n_splits)):
@@ -110,7 +116,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         num_epochs=cfg.training.num_epochs,
         batch_size=cfg.training.batch_size,
         drop_samples=cfg.training.drop_samples,
-        input_perturbation=cfg.training.input_perturbation,
+        input_perturbation=cfg.training.input_perturbation_strategy,
         num_workers=cfg.model.num_workers,
         repetitions=cfg.model.repetitions,
         repetitions_for_best_neuron=cfg.model.repetitions_for_best_neuron,

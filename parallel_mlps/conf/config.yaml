@@ -11,7 +11,7 @@ training:
 
     num_epochs: 100
     batch_size: 32
-    drop_samples: 0.1
+    drop_samples: null
     input_perturbation_strategy: null #sqrt #random_sparsity0.1 #sqrt
 
     project_name: "novo_teste"

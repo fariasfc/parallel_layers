@@ -23,7 +23,7 @@ class TrainingConfig:
 
     num_epochs: int
     batch_size: int
-    drop_samples: float
+    drop_samples: Optional[float]
     input_perturbation_strategy: Optional[str]
 
 

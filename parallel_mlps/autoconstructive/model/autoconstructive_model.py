@@ -141,8 +141,8 @@ class AutoConstructiveModel(nn.Module):
         learning_rate: float,
         num_epochs: int,
         batch_size: int,
-        drop_samples: float,
-        input_perturbation: str,
+        drop_samples: Optional[float],
+        input_perturbation: Optional[str],
         num_workers: int,
         repetitions: int,
         repetitions_for_best_neuron: int,
@@ -737,9 +737,9 @@ class AutoConstructiveModel(nn.Module):
 
         results_df.to_csv("results_df.csv")
         grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
-        best_architecture_id = grouped_df[
-            grouped_df["loss"] == grouped_df["loss"].min()
-        ].index.item()
+        # best_architecture_id = grouped_df[
+        #     grouped_df["loss"] == grouped_df["loss"].min()
+        # ].index.item()
         best = grouped_df[grouped_df["loss"] == grouped_df["loss"].min()].reset_index()
 
         # model_id = (results_df[results_df['architecture_id'] == best_architecture_id]).index.min()
