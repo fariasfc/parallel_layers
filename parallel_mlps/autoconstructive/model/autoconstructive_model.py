@@ -1,3 +1,4 @@
+from collections import Counter
 from copy import deepcopy
 from conf.config import MAP_ACTIVATION
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
@@ -735,18 +736,32 @@ class AutoConstructiveModel(nn.Module):
             else:
                 results_df = pd.concat((results_df, current_df))
 
-        # results_df.to_csv("results_df.csv")
+        results_df.to_csv("/tmp/results_df.csv")
         # activation_name is here only to appear at the final dataframe, once architecture_id has a 1-1 match with activation_name
-        metric = "median"
+        metric = "<lambda_0>"
         grouped_df = (
             results_df.groupby(["architecture_id", "activation_name"])
-            .agg([metric, "std"])
+            .agg(["mean", "median", "std", "count", lambda x: x.quantile(0.95)])
             .sort_values(by=("loss", metric))
-        )
+        ).reset_index()
+
+        num_models = grouped_df["model_id"]["count"].values[0]
+
+        counter = {i: 0 for i in self.output__architecture_id}
+        for index, row in results_df.sort_values(by="loss").iterrows():
+            architecture_id = row["architecture_id"]
+            counter[architecture_id] += 1
+            if counter[architecture_id] == num_models:
+                best_architecture_id = architecture_id
+                break
+
+        best = grouped_df[grouped_df["architecture_id"] == best_architecture_id]
+
         best = grouped_df[
             grouped_df[("loss", metric)] == grouped_df[("loss", metric)].min()
         ].reset_index()
-        num_neurons = best["num_neurons"][metric].item()
+        num_neurons = best["num_neurons"]["mean"].item()
+        self.logger.info(grouped_df)
         # grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
         # # best_architecture_id = grouped_df[
         # #     grouped_df["loss"] == grouped_df["loss"].min()
@@ -759,6 +774,9 @@ class AutoConstructiveModel(nn.Module):
         # activation =
         # num_neurons = int(best["num_neurons"].item())
         activation_name = [MAP_ACTIVATION[best["activation_name"].item()]()]
+        self.logger.info(
+            f"best num neurons: {num_neurons}, best activation: {activation_name}"
+        )
 
         return num_neurons, activation_name
 
