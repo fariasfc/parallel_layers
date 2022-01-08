@@ -757,9 +757,9 @@ class AutoConstructiveModel(nn.Module):
 
         best = grouped_df[grouped_df["architecture_id"] == best_architecture_id]
 
-        best = grouped_df[
-            grouped_df[("loss", metric)] == grouped_df[("loss", metric)].min()
-        ].reset_index()
+        # best = grouped_df[
+        #     grouped_df[("loss", metric)] == grouped_df[("loss", metric)].min()
+        # ].reset_index()
         num_neurons = best["num_neurons"]["mean"].item()
         self.logger.info(grouped_df)
         # grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
@@ -957,6 +957,7 @@ class AutoConstructiveModel(nn.Module):
                 current_test_x,
                 current_best_mlps,
             )
+        self.logger.info(f"final_model: {self.best_model_sequential}.")
 
     def get_best_model_arch(self):
         if self.is_ensemble:
