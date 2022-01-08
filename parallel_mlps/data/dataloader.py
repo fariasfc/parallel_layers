@@ -122,13 +122,14 @@ class Dataloader:
             with open(cache_file, "wb") as f:
                 pickle.dump(self.openml_data, f)
 
+        if isinstance(self.openml_data.data, scipy.sparse.csr.csr_matrix):
+            self.openml_data.data = np.asarray(self.openml_data.data.todense())
+
         # Removing rows with nans
         nan_rows = np.isnan(self.openml_data.data).any(axis=1)
         self.openml_data.data = self.openml_data.data[~nan_rows]
         self.openml_data.target = self.openml_data.target[~nan_rows]
 
-        if isinstance(self.openml_data.data, scipy.sparse.csr.csr_matrix):
-            self.openml_data.data = np.asarray(self.openml_data.data.todense())
         x_values = self.openml_data.data
         if not isinstance(x_values, np.ndarray):
             cat_columns = x_values.select_dtypes(["category"]).columns
