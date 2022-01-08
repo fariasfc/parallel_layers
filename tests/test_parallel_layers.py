@@ -240,6 +240,39 @@ def test_build_model_ids(
     print(hidden_layer_ids)
 
 
+@pytest.mark.parametrize(
+    "repetitions,activations,min_neurons,max_neurons,step_neurons",
+    [(3, [nn.LeakyReLU(), nn.Sigmoid()], 1, 4, 1)],
+)
+def test_architecture_ids(
+    repetitions, activations, min_neurons, max_neurons, step_neurons
+):
+    (
+        hidden_neuron__model_id,
+        output__model_id,
+        output__architecture_id,
+    ) = build_model_ids(
+        repetitions,
+        activations,
+        min_neurons,
+        max_neurons,
+        step_neurons,
+    )
+    pmlps = ParallelMLPs(
+        3,
+        2,
+        hidden_neuron__model_id,
+        output__model_id,
+        output__architecture_id,
+        None,
+        None,
+        activations,
+        device="cpu",
+    )
+    pmlps.output__architecture_id
+    print("a")
+
+
 def test_fail_build_model_ids():
     with pytest.raises(ValueError, match=r".*only unique values.*"):
         build_model_ids(

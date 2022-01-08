@@ -1,4 +1,5 @@
 from copy import deepcopy
+import logging
 from conf.config import MAP_ACTIVATION
 from functools import partial
 from itertools import groupby
@@ -86,11 +87,31 @@ def build_model_ids(
             hidden_neuron__model_id += [i] * structure
             i += 1
 
+    total_hidden_neurons = len(hidden_neuron__model_id)
+    activations_split = total_hidden_neurons // num_activations
+
     output__model_id = [i[0] for i in groupby(hidden_neuron__model_id)]
-    output__architecture_id = (
+    output__neuron_structure_id = (
         output__model_id[: num_activations * num_different_neurons_structures]
         * repetitions
     )
+
+    repetition_architecture_id = np.tile(
+        np.arange(num_different_neurons_structures), repetitions
+    )
+    # # model_ids = np.arange(num_different_neurons_structures)
+    # repetition_architecture_id = np.array([])
+    # for rep in range(repetitions):
+    #     repetition_architecture_id = np.hstack((repetition_architecture_id, model_ids))
+
+    output__architecture_id = np.array([])
+    for act in range(num_activations):
+        output__architecture_id = np.hstack(
+            (output__architecture_id, repetition_architecture_id)
+        )
+        repetition_architecture_id += max(repetition_architecture_id) + 1
+
+    output__architecture_id = output__architecture_id.astype(int).tolist()
 
     return hidden_neuron__model_id, output__model_id, output__architecture_id
 
@@ -115,6 +136,8 @@ class ParallelMLPs(nn.Module):
         self.in_features = in_features
         self.out_features = out_features
         self.activations = activations
+        if logger is None:
+            logger = logging.getLogger(__name__)
         self.logger = logger
         self.drop_samples = drop_samples
 
