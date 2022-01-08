@@ -14,6 +14,8 @@ training:
     drop_samples: null
     input_perturbation_strategy: null #sqrt #random_sparsity0.1 #sqrt
 
+    find_num_neurons_first: False
+
     project_name: "novo_teste"
 model:
     all_data_to_device: True

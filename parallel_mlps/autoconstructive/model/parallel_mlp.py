@@ -390,13 +390,22 @@ class ParallelMLPs(nn.Module):
         architecture_id = self.output__architecture_id[index][0]
         return architecture_id
 
-    def get_activation_from_model_id(self, model_id):
-        activation_index = (
-            torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
-            // self.activations_split
-        )
-        activation = deepcopy(self.activations[activation_index])
-        return activation
+    def get_activation_from_model_id(self, model_ids):
+        activations = []
+        if isinstance(model_ids, int):
+            model_ids = [model_ids]
+
+        for model_id in model_ids:
+            activation_index = (
+                torch.nonzero(self.hidden_neuron__model_id == model_id)[0]
+                // self.activations_split
+            )
+            activation = deepcopy(self.activations[activation_index])
+            activations.append(activation)
+        if len(activations) == 1:
+            activations = activations[0]
+
+        return activations
 
     def get_activation_name_from_model_id(self, model_id):
         activation = self.get_activation_from_model_id(model_id)

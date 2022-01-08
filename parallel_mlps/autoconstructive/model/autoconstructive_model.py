@@ -144,6 +144,7 @@ class AutoConstructiveModel(nn.Module):
         batch_size: int,
         drop_samples: Optional[float],
         input_perturbation: Optional[str],
+        find_num_neurons_first: bool,
         num_workers: int,
         repetitions: int,
         repetitions_for_best_neuron: int,
@@ -178,6 +179,7 @@ class AutoConstructiveModel(nn.Module):
         self.batch_size = batch_size
         self.drop_samples = drop_samples
         self.input_perturbation = input_perturbation
+        self.find_num_neurons_first = find_num_neurons_first
         self.num_workers = num_workers
         self.repetitions = repetitions
         self.repetitions_for_best_neuron = repetitions_for_best_neuron
@@ -232,11 +234,19 @@ class AutoConstructiveModel(nn.Module):
 
     def append_to_validation_df(self, training_loss, validation_loss, model_ids):
         current_rows = {
-            "architecture_id": np.array(self.output__architecture_id)[model_ids],
-            "training_loss": training_loss.current_reduction[model_ids],
-            "validation_loss": validation_loss.current_reduction[model_ids],
+            "architecture_id": self.pmlps.output__architecture_id[model_ids]
+            .cpu()
+            .numpy(),
+            "num_neurons": self.pmlps.model_id__num_hidden_neurons[model_ids]
+            .cpu()
+            .numpy(),
+            "activation": self.pmlps.get_activation_from_model_id(model_ids),
+            "training_loss": training_loss.current_reduction[model_ids].cpu().numpy(),
+            "validation_loss": validation_loss.current_reduction[model_ids]
+            .cpu()
+            .numpy(),
             "model_id": model_ids,
-            "start_epoch": self.model__start_epoch[model_ids],
+            "start_epoch": self.model__start_epoch[model_ids].cpu().numpy(),
             "end_epoch": self.epoch,
         }
         self.pmlps.eval()
@@ -247,8 +257,8 @@ class AutoConstructiveModel(nn.Module):
                 if dataloader:
                     x_val, y_val = dataloader.dataset[:]
                     y_preds = self.pmlps(
-                        x_val
-                    )  # [batch_size, num_unique_models, out_features]
+                        x_val.to(self.device)
+                    ).cpu()  # [batch_size, num_unique_models, out_features]
 
                     for model_id in model_ids:
                         r = assess_model(
@@ -531,6 +541,16 @@ class AutoConstructiveModel(nn.Module):
         # Removing priorities
         best_mlps = nn.ModuleList([tup[-1] for tup in best_mlps])
 
+        if self.debug_test and self.test_dataloader is not None:
+            self.append_to_validation_df(
+                epoch_train_loss,
+                epoch_validation_loss,
+                self.pmlps.output__model_id.cpu().tolist(),
+            )
+            filename = f"/tmp/validation_df_epoch{self.epoch}.csv"
+            self.validation_df.to_csv(filename)
+            self.logger.info(f"Saved dataframe in {filename}")
+
         return best_mlps, best_validation_loss, model__global_best_validation_loss
 
     def reset_exhausted_models(self, epoch_train_loss, epoch_validation_loss):
@@ -658,8 +678,10 @@ class AutoConstructiveModel(nn.Module):
                 new_data = []
                 for x, _ in dataloader:
                     x = x.to(self.device)
-                    new_data.append(best_mlp(x).cpu())
-                current[k] = self._transform_data(original[k], torch.cat(new_data))
+                    new_data.append(best_mlp(x))
+                current[k] = self._transform_data(
+                    original[k], torch.cat(new_data).to(original[k].device)
+                )
 
         best_mlp.train()
 
@@ -842,18 +864,32 @@ class AutoConstructiveModel(nn.Module):
         ):
             current_layer_index += 1
 
-            best_num_neurons, activations = self.find_num_neurons(
-                x_train=current_train_x,
-                y_train=current_train_y,
-                x_validation=current_validation_x,
-                y_validation=current_validation_y,
-                x_test=current_test_x,
-                y_test=current_test_y,
-            )
+            min_neurons = self.min_neurons
+            max_neurons = self.max_neurons
+            activations = self.activations
+            repetitions = self.repetitions
+            step_neurons = self.step_neurons
 
-            self.logger.info(
-                f"Best architecture: {best_num_neurons}, activations: {activations}"
-            )
+            if self.find_num_neurons_first:
+                self.logger.info("Defining architecture first.")
+                best_num_neurons, best_activations = self.find_num_neurons(
+                    x_train=current_train_x,
+                    y_train=current_train_y,
+                    x_validation=current_validation_x,
+                    y_validation=current_validation_y,
+                    x_test=current_test_x,
+                    y_test=current_test_y,
+                )
+
+                min_neurons = best_num_neurons
+                max_neurons = best_num_neurons
+                activations = best_activations
+                repetitions = self.repetitions_for_best_neuron
+                step_neurons = 1
+
+                self.logger.info(
+                    f"Best architecture: {best_num_neurons}, activations: {activations}"
+                )
 
             train_dataloader = self._get_dataloader(current_train_x, current_train_y)
             validation_dataloader = self._get_dataloader(
@@ -870,11 +906,11 @@ class AutoConstructiveModel(nn.Module):
                 output__model_id,
                 output__architecture_id,
             ) = build_model_ids(
-                self.repetitions_for_best_neuron,
-                self.activations,
-                best_num_neurons,
-                best_num_neurons,
-                1,
+                repetitions,
+                activations,
+                min_neurons,
+                max_neurons,
+                step_neurons,
             )
             (
                 current_best_mlps,
