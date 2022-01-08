@@ -638,20 +638,32 @@ class AutoConstructiveModel(nn.Module):
     ):
         best_mlp.eval()
         with torch.no_grad():
-            current_train_x = best_mlp(current_train_x)
-            current_train_x = self._transform_data(original_train_x, current_train_x)
+            current = {
+                "train": current_train_x,
+                "validation": current_validation_x,
+                "test": current_test_x,
+            }
+            original = {
+                "train": original_train_x,
+                "validation": original_validation_x,
+                "test": original_test_x,
+            }
+            for k in current:
+                if current[k] is None:
+                    continue
 
-            current_validation_x = best_mlp(current_validation_x)
-            current_validation_x = self._transform_data(
-                original_validation_x, current_validation_x
-            )
+                dataloader = self._get_dataloader(
+                    current[k], torch.arange(current[k].shape[0]), shuffle=False
+                )
+                new_data = []
+                for x, _ in dataloader:
+                    x = x.to(self.device)
+                    new_data.append(best_mlp(x).cpu())
+                current[k] = self._transform_data(original[k], torch.cat(new_data))
 
-            if current_test_x:
-                current_test_x = best_mlp(current_test_x)
-                current_test_x = self._transform_data(original_test_x, current_test_x)
         best_mlp.train()
 
-        return current_train_x, current_validation_x, current_test_x
+        return current["train"], current["validation"], current["test"]
 
     def _transform_data(self, original_x, x):
         if self.transform_data_strategy == "append_original_input":
