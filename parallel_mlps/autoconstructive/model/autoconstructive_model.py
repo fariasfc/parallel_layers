@@ -735,18 +735,29 @@ class AutoConstructiveModel(nn.Module):
             else:
                 results_df = pd.concat((results_df, current_df))
 
-        results_df.to_csv("results_df.csv")
-        grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
-        # best_architecture_id = grouped_df[
-        #     grouped_df["loss"] == grouped_df["loss"].min()
-        # ].index.item()
-        best = grouped_df[grouped_df["loss"] == grouped_df["loss"].min()].reset_index()
+        # results_df.to_csv("results_df.csv")
+        # activation_name is here only to appear at the final dataframe, once architecture_id has a 1-1 match with activation_name
+        metric = "median"
+        grouped_df = (
+            results_df.groupby(["architecture_id", "activation_name"])
+            .agg([metric, "std"])
+            .sort_values(by=("loss", metric))
+        )
+        best = grouped_df[
+            grouped_df[("loss", metric)] == grouped_df[("loss", metric)].min()
+        ].reset_index()
+        num_neurons = best["num_neurons"][metric].item()
+        # grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
+        # # best_architecture_id = grouped_df[
+        # #     grouped_df["loss"] == grouped_df["loss"].min()
+        # # ].index.item()
+        # best = grouped_df[grouped_df["loss"] == grouped_df["loss"].min()].reset_index()
 
         # model_id = (results_df[results_df['architecture_id'] == best_architecture_id]).index.min()
 
         # best_num_hidden_neurons = self.pmlps.model_id__num_hidden_neurons[model_id]
         # activation =
-        num_neurons = int(best["num_neurons"].item())
+        # num_neurons = int(best["num_neurons"].item())
         activation_name = [MAP_ACTIVATION[best["activation_name"].item()]()]
 
         return num_neurons, activation_name
