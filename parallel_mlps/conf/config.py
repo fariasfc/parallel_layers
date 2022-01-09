@@ -25,6 +25,7 @@ class TrainingConfig:
     batch_size: int
     drop_samples: Optional[float]
     input_perturbation_strategy: Optional[str]
+    regularization_gamma: Optional[float]
     find_num_neurons_first: bool
 
 

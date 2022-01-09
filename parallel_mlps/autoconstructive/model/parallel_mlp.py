@@ -373,6 +373,44 @@ class ParallelMLPs(nn.Module):
 
         return mlps
 
+    def get_regularization_term(self, gamma=1e-4, l=2):
+        n_hidden, n_inputs = self.hidden_layer.weight.shape
+        n_models = self.num_unique_models
+
+        if l == 1:
+            hid_w = (self.hidden_layer.weight.abs()).sum(-1)[:, None]
+            hid_b = (self.hidden_layer.bias.abs())[:, None]
+            out_w = (self.weight.abs()).sum(0)[:, None]
+            b_hid_out_reg = (self.bias.abs()).sum(-1)
+        else:
+            hid_w = (self.hidden_layer.weight ** l).sum(-1)[:, None]
+            hid_b = (self.hidden_layer.bias ** l)[:, None]
+            out_w = (self.weight ** l).sum(0)[:, None]
+            b_hid_out_reg = (self.bias ** l).sum(-1)
+
+        w_in_hid_reg = torch.zeros(n_models, 1, device=self.device).scatter_add_(
+            0,
+            self.hidden_neuron__model_id[:, None],
+            hid_w,
+        )
+
+        b_in_hid_reg = torch.zeros(n_models, 1, device=self.device).scatter_add(
+            0,
+            self.hidden_neuron__model_id[:, None],
+            hid_b,
+        )
+
+        w_hid_out_reg = torch.zeros(n_models, 1, device=self.device).scatter_add_(
+            0,
+            self.hidden_neuron__model_id[:, None],
+            out_w,
+        )
+
+        reg = w_in_hid_reg + b_in_hid_reg + w_hid_out_reg + b_hid_out_reg[:, None]
+        reg = gamma * reg.flatten()
+
+        return reg
+
     def get_model_ids_from_architecture_id(self, architecture_id):
         indexes = self.output__architecture_id == architecture_id
         model_ids = self.output__model_id[indexes]
@@ -413,25 +451,6 @@ class ParallelMLPs(nn.Module):
             k for (k, v) in MAP_ACTIVATION.items() if v == type(activation)
         ][0]
         return activation_name
-
-    # def get_regularization_term(self) -> torch.Tensor:
-    #     self.hidden_layer.weight
-    #     torch.zeros(
-    #         self.num_unique_models, self.out_features, device=self.device
-    #     ).scatter_add_()
-    #     # [batch_size, total_repetitions, num_architectures, out_features]
-    #     adjusted_out = (
-    #         torch.zeros(
-    #             batch_size, self.num_unique_models, self.out_features, device=x.device
-    #         ).scatter_add_(
-    #             1,
-    #             # self.hidden_neuron__layer_id,
-    #             self.hidden_neuron__model_id[None, :, None].expand(
-    #                 batch_size, -1, self.out_features
-    #             ),
-    #             x,
-    #         )
-    #     ) + self.bias[None, :, :]
 
     def extra_repr(self) -> str:
         return "in_features={}, out_features={}, bias={}".format(

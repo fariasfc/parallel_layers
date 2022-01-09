@@ -13,6 +13,7 @@ training:
     batch_size: 32
     drop_samples: null
     input_perturbation_strategy: null #sqrt #random_sparsity0.1 #sqrt
+    regularization_gamma: 1e-4
 
     find_num_neurons_first: False
 

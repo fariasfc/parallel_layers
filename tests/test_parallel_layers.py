@@ -39,6 +39,76 @@ MIN_NEURONS = 1
 MAX_NEURONS = 3
 
 
+@pytest.fixture()
+def mocked_pmlps():
+    pmlps = ParallelMLPs(
+        in_features=3,
+        out_features=2,
+        hidden_neuron__model_id=[0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5],
+        output__model_id=[0, 1, 2, 3, 4, 5],
+        output__architecture_id=[0, 1, 2, 0, 1, 2],
+        drop_samples=0,
+        activations=[nn.Identity(), nn.Sigmoid()],
+        input_perturbation_strategy=None,
+        device="cpu",
+    )
+    with torch.no_grad():
+        pmlps.hidden_layer.weight[:, :] = torch.Tensor(
+            [
+                [1, 1, 1],
+                [2, 2, 2],
+                [2, 2, 2],
+                [3, 3, 3],
+                [3, 3, 3],
+                [3, 3, 3],
+                [4, 4, 4],
+                [5, 5, 5],
+                [5, 5, 5],
+                [6, 6, 6],
+                [6, 6, 6],
+                [6, 6, 6],
+            ]
+        )  # hidden vs. inputs, 12, 3
+        pmlps.hidden_layer.bias[:] = torch.Tensor(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        )
+        pmlps.weight[:, :] = torch.Tensor(
+            [
+                [1, 2, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6],
+                [1, 2, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6],
+            ]
+        )  # outputs, hidden 2, 12
+        pmlps.bias[:, :] = torch.Tensor(
+            [[1, 1], [2, 2], [3, 3], [4, 4], [5, 5], [6, 6]]
+        )
+
+    return pmlps
+
+
+@pytest.mark.parametrize(
+    "l,expected_regularization",
+    [
+        (1, [8, 29, 66, 35, 77, 135]),
+        (
+            2,
+            [
+                8,
+                40 + 4 + 9 + 8,
+                135 + 16 + 25 + 36 + 9 + 9,
+                80 + 49 + 16 + 16,
+                250 + 64 + 81 + 25 + 25,
+                540 + 100 + 121 + 144 + 36 + 36,
+            ],
+        ),
+    ],
+)
+def test_regularization(mocked_pmlps: ParallelMLPs, l, expected_regularization):
+    reg = mocked_pmlps.get_regularization_term(gamma=1, l=l)
+    expected_reg = torch.Tensor(expected_regularization)
+    assert torch.equal(reg, expected_reg)
+    print(reg)
+
+
 @pytest.fixture
 def X():
     return torch.rand(size=(N_SAMPLES, N_FEATURES))

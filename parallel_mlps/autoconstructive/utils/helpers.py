@@ -3,6 +3,7 @@ import math
 from torch.nn import init
 
 from autoconstructive.utils.accumulators import ObjectiveEnum
+from experiment_utils import assess_model
 
 
 def has_improved(
@@ -34,6 +35,14 @@ def has_improved(
     # current_best_losses.isinf()
 
     return percentage_of_best_loss, better_models_mask
+
+
+def debug_assess_model(logits, y_labels, model_id):
+    return assess_model(
+        logits=logits[:, model_id, :].cpu().numpy(),
+        y_labels=y_labels.cpu().numpy(),
+        metric_prefix="",
+    )
 
 
 def min_ix_argmin(a, n_hidden, ignore_zeros=False, rtol=0):

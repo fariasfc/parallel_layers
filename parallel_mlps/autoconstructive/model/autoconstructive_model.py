@@ -1,4 +1,6 @@
 from collections import Counter
+import multiprocessing
+from functools import partial
 from copy import deepcopy
 from conf.config import MAP_ACTIVATION
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
@@ -144,6 +146,7 @@ class AutoConstructiveModel(nn.Module):
         batch_size: int,
         drop_samples: Optional[float],
         input_perturbation: Optional[str],
+        regularization_gamma: Optional[float],
         find_num_neurons_first: bool,
         num_workers: int,
         repetitions: int,
@@ -179,6 +182,7 @@ class AutoConstructiveModel(nn.Module):
         self.batch_size = batch_size
         self.drop_samples = drop_samples
         self.input_perturbation = input_perturbation
+        self.regularization_gamma = regularization_gamma
         self.find_num_neurons_first = find_num_neurons_first
         self.num_workers = num_workers
         self.repetitions = repetitions
@@ -233,24 +237,29 @@ class AutoConstructiveModel(nn.Module):
         return self.topk is not None and self.topk > 1
 
     def append_to_validation_df(self, training_loss, validation_loss, model_ids):
-        current_rows = {
-            "architecture_id": self.pmlps.output__architecture_id[model_ids]
-            .cpu()
-            .numpy(),
-            "num_neurons": self.pmlps.model_id__num_hidden_neurons[model_ids]
-            .cpu()
-            .numpy(),
-            "activation": self.pmlps.get_activation_from_model_id(model_ids),
-            "training_loss": training_loss.current_reduction[model_ids].cpu().numpy(),
-            "validation_loss": validation_loss.current_reduction[model_ids]
-            .cpu()
-            .numpy(),
-            "model_id": model_ids,
-            "start_epoch": self.model__start_epoch[model_ids].cpu().numpy(),
-            "end_epoch": self.epoch,
-        }
         self.pmlps.eval()
         with torch.no_grad():
+            current_rows = {
+                "architecture_id": self.pmlps.output__architecture_id[model_ids]
+                .cpu()
+                .numpy(),
+                "num_neurons": self.pmlps.model_id__num_hidden_neurons[model_ids]
+                .cpu()
+                .numpy(),
+                "regularization_term": self.pmlps.get_regularization_term(gamma=1, l=1)
+                .cpu()
+                .numpy(),
+                "activation": self.pmlps.get_activation_from_model_id(model_ids),
+                "training_loss": training_loss.current_reduction[model_ids]
+                .cpu()
+                .numpy(),
+                "validation_loss": validation_loss.current_reduction[model_ids]
+                .cpu()
+                .numpy(),
+                "model_id": model_ids,
+                "start_epoch": self.model__start_epoch[model_ids].cpu().numpy(),
+                "end_epoch": self.epoch,
+            }
 
             def _assess_model(dataloader, model_ids):
                 results = []
@@ -259,7 +268,6 @@ class AutoConstructiveModel(nn.Module):
                     y_preds = self.pmlps(
                         x_val.to(self.device)
                     ).cpu()  # [batch_size, num_unique_models, out_features]
-
                     for model_id in model_ids:
                         r = assess_model(
                             y_preds[:, model_id, :].cpu().numpy(),
@@ -268,6 +276,28 @@ class AutoConstructiveModel(nn.Module):
                         )
                         results.append(r[0]["__overall_acc"])
                 return results
+
+            # results = {}
+            # for dataloader in [
+            #     self.train_dataloader,
+            #     self.validation_dataloader,
+            #     self.test_dataloader,
+            # ]:
+            #     if dataloader is None:
+            #         continue
+
+            #     x_val, y_val = dataloader.dataset[:]
+            #     y_preds = self.pmlps(
+            #         x_val.to(self.device)
+            #     ).cpu()  # [batch_size, num_unique_models, out_features]
+            #     with multiprocessing.Pool(processes=10) as p:
+            #         r = p.map(
+            #             partial(
+            #                 helpers.debug_assess_model, logits=y_preds, y_labels=y_val
+            #             ),
+            #             model_ids,
+            #         )
+            #         results[dataloader] = [e[0]["__overall_acc"] for e in r]
 
             train_results = _assess_model(self.train_dataloader, model_ids)
             val_results = _assess_model(self.validation_dataloader, model_ids)
@@ -619,6 +649,7 @@ class AutoConstructiveModel(nn.Module):
             individual_losses = self.pmlps.calculate_loss(
                 loss_func=loss_function, preds=outputs, target=y
             )
+
             if self.drop_samples is not None:
                 if x.shape[0] != self.batch_size:
                     drop_samples = torch.zeros(
@@ -627,9 +658,11 @@ class AutoConstructiveModel(nn.Module):
                 individual_losses *= drop_samples.uniform_() > self.drop_samples
 
             # self.regularization=True
-            # if self.regularization:
-            #     self.pmlps.get_regularization_term()
-            # individual_losses = individual_losses
+            if self.regularization_gamma is not None:
+                regularization_term = self.pmlps.get_regularization_term(
+                    gamma=self.regularization_gamma
+                )
+                individual_losses = individual_losses + regularization_term
 
             accumulator.update(individual_losses.detach())
 
