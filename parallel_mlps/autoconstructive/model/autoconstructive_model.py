@@ -1,4 +1,5 @@
 from collections import Counter
+from kneed import KneeLocator
 import multiprocessing
 from functools import partial
 from copy import deepcopy
@@ -590,10 +591,10 @@ class AutoConstructiveModel(nn.Module):
         if num_models_to_reset > 0:
             # TODO: acompanhar resultado final de cada arquitetura para fazer uma media (rolling avg?) da performance
             # daquela arquitetura (ja que varias simulacoes dela pode acontecer aqui)
-            if self.debug_test:
-                self.append_to_validation_df(
-                    epoch_train_loss, epoch_validation_loss, model_ids_to_reset
-                )
+            # if self.debug_test:
+            #     self.append_to_validation_df(
+            #         epoch_train_loss, epoch_validation_loss, model_ids_to_reset
+            #     )
             epoch_validation_loss.reset_best_from_ids(model_ids_to_reset)
             self.total_local_resets += num_models_to_reset
             self.pmlps.reset_parameters(model_ids_to_reset)
@@ -813,22 +814,43 @@ class AutoConstructiveModel(nn.Module):
         ).reset_index()
 
         num_models = grouped_df["model_id"]["count"].values[0]
+        bests = pd.DataFrame()
+        for activation in grouped_df["activation_name"].unique():
+            tmp_df = results_df[results_df["activation_name"] == activation]
 
-        counter = {i: 0 for i in self.output__architecture_id}
-        for index, row in results_df.sort_values(by="loss").iterrows():
-            architecture_id = row["architecture_id"]
-            counter[architecture_id] += 1
-            if counter[architecture_id] == num_models:
-                best_architecture_id = architecture_id
-                break
+            k = KneeLocator(
+                x=tmp_df["num_neurons"],
+                y=tmp_df["loss"],
+                curve="convex",
+                direction="decreasing",
+                interp_method="polynomial",
+                polynomial_degree=7,
+            )
 
-        best = grouped_df[grouped_df["architecture_id"] == best_architecture_id]
+            bests = pd.concat((bests, tmp_df[tmp_df["num_neurons"] == k.knee]))
+        best = (
+            bests.groupby(["architecture_id", "activation_name"])
+            .median()
+            .sort_values(by="loss")
+            .iloc[0:1, :]
+            .reset_index()
+        )
+
+        # counter = {i: 0 for i in self.output__architecture_id}
+        # for index, row in results_df.sort_values(by="loss").iterrows():
+        #     architecture_id = row["architecture_id"]
+        #     counter[architecture_id] += 1
+        #     if counter[architecture_id] == num_models:
+        #         best_architecture_id = architecture_id
+        #         break
+
+        # best = grouped_df[grouped_df["architecture_id"] == best_architecture_id]
 
         # best = grouped_df[
         #     grouped_df[("loss", metric)] == grouped_df[("loss", metric)].min()
         # ].reset_index()
-        num_neurons = best["num_neurons"]["mean"].item()
-        self.logger.info(grouped_df)
+        # num_neurons = best["num_neurons"]["mean"].item()
+        self.logger.info(bests)
         # grouped_df = results_df.groupby(["architecture_id", "activation_name"]).mean()
         # # best_architecture_id = grouped_df[
         # #     grouped_df["loss"] == grouped_df["loss"].min()
@@ -840,6 +862,7 @@ class AutoConstructiveModel(nn.Module):
         # best_num_hidden_neurons = self.pmlps.model_id__num_hidden_neurons[model_id]
         # activation =
         # num_neurons = int(best["num_neurons"].item())
+        num_neurons = best["num_neurons"].item()
         activation_name = [MAP_ACTIVATION[best["activation_name"].item()]()]
         self.logger.info(
             f"best num neurons: {num_neurons}, best activation: {activation_name}"

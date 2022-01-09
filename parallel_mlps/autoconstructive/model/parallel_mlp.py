@@ -407,7 +407,8 @@ class ParallelMLPs(nn.Module):
         )
 
         reg = w_in_hid_reg + b_in_hid_reg + w_hid_out_reg + b_hid_out_reg[:, None]
-        reg = gamma * reg.flatten()
+        reg = reg.flatten() / self.model_id__num_hidden_neurons
+        reg = gamma * reg
 
         return reg
 
