@@ -31,12 +31,12 @@ def assess_model(logits, y_labels, metric_prefix):
         metrics[f"{metric_prefix}_{model}_matthews_corrcoef"] = float(
             sklearn.metrics.matthews_corrcoef(y_labels, tmp_logits_labels)
         )
-        metrics[f"{metric_prefix}_{model}_overall_acc"] = cm.Overall_ACC
         metrics[f"{metric_prefix}_{model}_f1_macro"] = cm.F1_Macro
         metrics[f"{metric_prefix}_{model}_f1_micro"] = cm.F1_Micro
         metrics[f"{metric_prefix}_{model}_confusion_matrix"] = str(cm.matrix).replace(
             " ", ""
         )
+        metrics[f"{metric_prefix}_{model}_overall_acc"] = cm.Overall_ACC
         # precision, recall, _ = sklearn.metrics.precision_recall_curve(testy, naive_probs)
         # auc_precision_recall = sklearn.metrics.auc(recall, precision)
 

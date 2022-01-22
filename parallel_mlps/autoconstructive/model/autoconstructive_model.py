@@ -460,8 +460,9 @@ class AutoConstructiveModel(nn.Module):
             # if current_best_validation_loss < best_validation_loss:
             if any(better_models_mask):
                 better_models_ids = torch.nonzero(better_models_mask)
+                topk = min(self.topk, better_models_ids.nelement())
                 topk_indices = torch.topk(
-                    -model__current_best_validation_loss[better_models_mask], self.topk
+                    -model__current_best_validation_loss[better_models_mask], topk
                 ).indices
                 better_models_ids = better_models_ids[topk_indices]
                 model__global_best_validation_loss[
