@@ -863,7 +863,7 @@ class AutoConstructiveModel(nn.Module):
         # best_num_hidden_neurons = self.pmlps.model_id__num_hidden_neurons[model_id]
         # activation =
         # num_neurons = int(best["num_neurons"].item())
-        num_neurons = best["num_neurons"].item()
+        num_neurons = int(best["num_neurons"].item())
         activation_name = [MAP_ACTIVATION[best["activation_name"].item()]()]
         self.logger.info(
             f"best num neurons: {num_neurons}, best activation: {activation_name}"
