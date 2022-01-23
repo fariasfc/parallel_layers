@@ -1,4 +1,6 @@
 from collections import Counter
+import pymcdm
+from pathlib import Path
 from kneed import KneeLocator
 import multiprocessing
 from functools import partial
@@ -102,6 +104,9 @@ class MyModel(nn.Module):
             abstain[:, mask_samples_all_models_abstained] = False
             confidences[abstain, :] = float("nan")
         return confidences
+
+    def __getitem__(self, i):
+        return self.module[i]
 
     def forward(self, x):
         if self.is_ensemble:
@@ -263,7 +268,8 @@ class AutoConstructiveModel(nn.Module):
             }
 
             def _assess_model(dataloader, model_ids):
-                results = []
+                # results = []
+                results = {}
                 if dataloader:
                     x_val, y_val = dataloader.dataset[:]
                     y_preds = self.pmlps(
@@ -274,8 +280,14 @@ class AutoConstructiveModel(nn.Module):
                             y_preds[:, model_id, :].cpu().numpy(),
                             y_val.cpu().numpy(),
                             "",
-                        )
-                        results.append(r[0]["__overall_acc"])
+                        )[0]
+                        keys = list(r.keys())
+                        keys.remove("__confusion_matrix")
+                        for k in keys:
+                            if k not in results:
+                                results[k] = []
+                            # results.append(r[0]["__overall_acc"])
+                            results[k].append(r[k])
                 return results
 
             # results = {}
@@ -300,18 +312,25 @@ class AutoConstructiveModel(nn.Module):
             #         )
             #         results[dataloader] = [e[0]["__overall_acc"] for e in r]
 
-            train_results = _assess_model(self.train_dataloader, model_ids)
-            val_results = _assess_model(self.validation_dataloader, model_ids)
-            test_results = _assess_model(self.test_dataloader, model_ids)
+            results = {}
+            results["train"] = _assess_model(self.train_dataloader, model_ids)
+            results["valid"] = _assess_model(self.validation_dataloader, model_ids)
+            results["test"] = _assess_model(self.test_dataloader, model_ids)
 
-            if train_results:
-                current_rows["train_overall_acc"] = train_results
+            for split in results.keys():
+                split_results = results[split]
+                for k in split_results.keys():
+                    current_rows[split + k.replace("__", "_")] = np.array(
+                        split_results[k]
+                    )
+            # if train_results:
+            #     current_rows["train_overall_acc"] = train_results
 
-            if val_results:
-                current_rows["valid_overall_acc"] = val_results
+            # if val_results:
+            #     current_rows["valid_overall_acc"] = val_results
 
-            if test_results:
-                current_rows["test_overall_acc"] = test_results
+            # if test_results:
+            #     current_rows["test_overall_acc"] = test_results
 
             # if self.validation_dataloader:
             #     x_val, y_val = self.validation_dataloader.dataset[:]
@@ -579,7 +598,9 @@ class AutoConstructiveModel(nn.Module):
                 epoch_validation_loss,
                 self.pmlps.output__model_id.cpu().tolist(),
             )
-            filename = f"/tmp/validation_df_epoch{self.epoch}.csv"
+            # back in path due to hydra output folder
+            filename = f"../../../analysis/data/validation_df_epoch{self.epoch}.csv"
+            # Path(filename).parent.mkdir(parents=True, exist_ok=True)
             self.validation_df.to_csv(filename)
             self.logger.info(f"Saved dataframe in {filename}")
 
@@ -805,7 +826,7 @@ class AutoConstructiveModel(nn.Module):
             else:
                 results_df = pd.concat((results_df, current_df))
 
-        results_df.to_csv("/tmp/results_df.csv")
+        results_df.to_csv("results_df.csv")
         # activation_name is here only to appear at the final dataframe, once architecture_id has a 1-1 match with activation_name
         metric = "<lambda_0>"
         grouped_df = (
@@ -813,29 +834,56 @@ class AutoConstructiveModel(nn.Module):
             .agg(["mean", "median", "std", "count", lambda x: x.quantile(0.95)])
             .sort_values(by=("loss", metric))
         ).reset_index()
+        method = "pareto"
 
-        num_models = grouped_df["model_id"]["count"].values[0]
-        bests = pd.DataFrame()
-        for activation in grouped_df["activation_name"].unique():
-            tmp_df = results_df[results_df["activation_name"] == activation]
+        if method == "pareto":
+            results_df
+            mcdm_tuples = [
+                (("num_neurons", "median"), -1),
+                (("loss", "median"), -1),
+                (("loss", "std"), -1),
+            ]
+            mcdm_keys = [k[0] for k in mcdm_tuples]
 
-            k = KneeLocator(
-                x=tmp_df["num_neurons"],
-                y=tmp_df["loss"],
-                curve="convex",
-                direction="decreasing",
-                interp_method="polynomial",
-                polynomial_degree=7,
+            decision_matrix = grouped_df[mcdm_keys].to_numpy()
+            pareto_mask = helpers.is_pareto_efficient(decision_matrix)
+
+            weights = pymcdm.weights.equal_weights(decision_matrix)
+            # weights = np.array([0.5, 0.4, 0.1])
+            types = [k[1] for k in mcdm_tuples]
+
+            bests = grouped_df.iloc[pareto_mask, :]
+            decision_matrix = bests[mcdm_keys].to_numpy()
+            mcdm_method = pymcdm.methods.TOPSIS(
+                pymcdm.normalizations.minmax_normalization
             )
+            bests["rank"] = mcdm_method(decision_matrix, weights, types)
+            bests = bests.sort_values(by="rank", ascending=False)
+            best = bests.iloc[0:1, :].reset_index()
 
-            bests = pd.concat((bests, tmp_df[tmp_df["num_neurons"] == k.knee]))
-        best = (
-            bests.groupby(["architecture_id", "activation_name"])
-            .median()
-            .sort_values(by="loss")
-            .iloc[0:1, :]
-            .reset_index()
-        )
+        else:
+            num_models = grouped_df["model_id"]["count"].values[0]
+            bests = pd.DataFrame()
+            for activation in grouped_df["activation_name"].unique():
+                tmp_df = results_df[results_df["activation_name"] == activation]
+
+                k = KneeLocator(
+                    x=tmp_df["num_neurons"],
+                    y=tmp_df["loss"],
+                    curve="convex",
+                    direction="decreasing",
+                    interp_method="polynomial",
+                    polynomial_degree=7,
+                )
+
+                bests = pd.concat((bests, tmp_df[tmp_df["num_neurons"] == k.knee]))
+            best = (
+                bests.groupby(["architecture_id", "activation_name"])
+                .median()
+                .sort_values(by="loss")
+                .iloc[0:1, :]
+                .reset_index()
+            )
 
         # counter = {i: 0 for i in self.output__architecture_id}
         # for index, row in results_df.sort_values(by="loss").iterrows():
@@ -863,7 +911,7 @@ class AutoConstructiveModel(nn.Module):
         # best_num_hidden_neurons = self.pmlps.model_id__num_hidden_neurons[model_id]
         # activation =
         # num_neurons = int(best["num_neurons"].item())
-        num_neurons = int(best["num_neurons"].item())
+        num_neurons = int(best[("num_neurons", "median")].item())
         activation_name = [MAP_ACTIVATION[best["activation_name"].item()]()]
         self.logger.info(
             f"best num neurons: {num_neurons}, best activation: {activation_name}"
@@ -1045,8 +1093,13 @@ class AutoConstructiveModel(nn.Module):
                 break
 
             if self.stack_hidden_layers:
-                current_best_mlps = current_best_mlps[:-1]
-                current_model[-1] = current_model[-1][:-1]
+                # current_best_mlps = current_best_mlps[:-1]
+                for cbmlp in current_best_mlps:
+                    cbmlp.module.out_layer = None
+
+                # current_model[-1] = current_model[-1][:-1]
+                for cm in current_model[-1]:
+                    cm.module.out_layer = None
 
             # if len(current_model) < self.max_layers:
             (
@@ -1074,7 +1127,8 @@ class AutoConstructiveModel(nn.Module):
             for model in self.best_model_sequential:
                 mlps = model.module
                 for mlp in mlps:
-                    arch.append(mlp.module.out_layer.in_features)
+                    # arch.append(mlp.module.out_layer.in_features)
+                    arch.append(mlp.module.hidden_layer.out_features)
 
             arch.append(mlp.module.out_layer.out_features)
             return arch

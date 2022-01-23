@@ -28,14 +28,41 @@ class MLP(nn.Module):
         self.metadata = metadata
         self.device = device
 
+    def __str__(self):
+        s = "MLP(\n"
+
+        if self.hidden_layer:
+            s += f"(hidden_layer): {self.hidden_layer}\n"
+
+        if self.activation:
+            s += f"(activation): {self.activation}\n"
+
+        if self.out_layer:
+            s += f"(out_layer): {self.out_layer}\n"
+
+        s += ")"
+
+        return s
+
+    def __repr__(self):
+        return self.__str__()
+
     @property
     def out_features(self):
-        return self.out_layer.out_features
+        if self.out_layer is not None:
+            return self.out_layer.out_features
+        else:
+            return self.hidden_layer.out_features
 
     def forward(self, x):
-        x = self.hidden_layer(x)
-        x = self.activation(x)
-        x = self.out_layer(x)
+        if self.hidden_layer is not None:
+            x = self.hidden_layer(x)
+
+        if self.activation is not None:
+            x = self.activation(x)
+
+        if self.out_layer is not None:
+            x = self.out_layer(x)
 
         return x
 
