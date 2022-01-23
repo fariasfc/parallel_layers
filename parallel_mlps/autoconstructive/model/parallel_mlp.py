@@ -393,7 +393,7 @@ class ParallelMLPs(nn.Module):
                         out_layer=out_layer,
                         activation=activation,
                         model_id=model_id,
-                        metadata={},
+                        metadata={"model_id": model_id},
                         device=self.device,
                     ).to(self.device)
                 )

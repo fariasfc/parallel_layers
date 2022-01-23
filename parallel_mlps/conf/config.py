@@ -20,6 +20,7 @@ class TrainingConfig:
     project_name: str
     validation_rate_from_train: float
     debug_test: bool
+    reset_exhausted_models: bool
 
     num_epochs: int
     batch_size: int

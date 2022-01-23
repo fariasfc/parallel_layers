@@ -176,6 +176,7 @@ class AutoConstructiveModel(nn.Module):
         random_state: int = 0,
         logger: Any = None,
         debug_test: bool = False,
+        reset_exhausted_models: bool = False,
     ):
         if all_data_to_device and num_workers > 0:
             raise ValueError("num_workers must be 0 if all_data_to_device is True.")
@@ -209,6 +210,7 @@ class AutoConstructiveModel(nn.Module):
         self.loss_rel_tol = loss_rel_tol
         self.min_improvement = min_improvement
         self.debug_test = debug_test
+        self.reset_exhausted_models = reset_exhausted_models
 
         if device != "cpu" and not torch.cuda.is_available():
             device = "cpu"
@@ -519,7 +521,8 @@ class AutoConstructiveModel(nn.Module):
             self.current_patience[~epoch_validation_loss.improved] += 1
             self.current_patience[epoch_validation_loss.improved] = 0
 
-            self.reset_exhausted_models(epoch_train_loss, epoch_validation_loss)
+            if self.reset_exhausted_models:
+                self._reset_exhausted_models(epoch_train_loss, epoch_validation_loss)
 
             t.set_postfix(
                 train_loss=epoch_best_train_loss,
@@ -606,7 +609,7 @@ class AutoConstructiveModel(nn.Module):
 
         return best_mlps, best_validation_loss, model__global_best_validation_loss
 
-    def reset_exhausted_models(self, epoch_train_loss, epoch_validation_loss):
+    def _reset_exhausted_models(self, epoch_train_loss, epoch_validation_loss):
         model_ids_to_reset = torch.where(self.current_patience > self.local_patience)[0]
 
         num_models_to_reset = len(model_ids_to_reset)
@@ -689,9 +692,16 @@ class AutoConstructiveModel(nn.Module):
 
             accumulator.update(individual_losses.detach())
 
-            loss = individual_losses.mean(
-                0
-            ).sum()  # [batch_size, num_models] -> [num_models] -> []
+            # loss = individual_losses.mean(
+            #     0
+            # ).sum()  # [batch_size, num_models] -> [num_models] -> []
+            loss = individual_losses.mean(0)  # [batch_size, num_models] -> [num_models]
+            if not self.reset_exhausted_models:
+                loss = loss * (self.current_patience < self.local_patience).to(
+                    loss.device
+                )
+
+            loss = loss.sum()  #  [num_models]-> []
 
             if optimizer:
                 loss.backward()

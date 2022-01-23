@@ -4,6 +4,7 @@ training:
     n_splits: 10
     validation_rate_from_train: 0.25
     debug_test: False
+    reset_exhausted_models: False
 
     dataset: "diabetes"
 
@@ -21,7 +22,7 @@ training:
 model:
     all_data_to_device: True
     loss_function: cross_entropy
-    optimizer_name: adam
+    optimizer_name: sgd #adam
     learning_rate: 3e-4
     num_workers: 0
     repetitions: 10

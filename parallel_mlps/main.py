@@ -140,6 +140,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         random_state=random_state,
         logger=logger,
         debug_test=cfg.training.debug_test,
+        reset_exhausted_models=cfg.training.reset_exhausted_models,
     )
 
     x_train = data["train"]["data"]
