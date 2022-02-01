@@ -132,11 +132,15 @@ def build_model_ids(
     #     repetition_architecture_id = np.hstack((repetition_architecture_id, model_ids))
 
     output__architecture_id = np.array([])
+    increment = max(repetition_architecture_id) + 1
     for act in range(num_activations):
         output__architecture_id = np.hstack(
             (output__architecture_id, repetition_architecture_id)
         )
-        repetition_architecture_id += max(repetition_architecture_id) + 1
+        repetition_architecture_id += increment
+        # [0, 1, 0, 1]
+        # [2, 3, 2, 3] + 2
+        # [] + 4
 
     output__architecture_id = output__architecture_id.astype(int).tolist()
 
@@ -202,6 +206,12 @@ class ParallelMLPs(nn.Module):
         self.num_activations = len(activations)
 
         self.activations_split = self.total_hidden_neurons // self.num_activations
+
+        self.model_id__activation_id = (
+            self.model_id__num_hidden_neurons.cumsum(0) - 1
+        ) // self.activations_split
+        # # Adjusting because the last element is always increased due to the cumsum.
+        # self.model_id__activation_id[-1] -= 1
 
         self.hidden_layer = nn.Linear(self.in_features, self.total_hidden_neurons)
         self.weight = Parameter(
@@ -457,6 +467,19 @@ class ParallelMLPs(nn.Module):
         return architecture_id
 
     def get_activation_from_model_id(self, model_ids):
+        activations = []
+        if isinstance(model_ids, int):
+            model_ids = [model_ids]
+
+        for model_id in model_ids:
+            activations.append(self.activations[self.model_id__activation_id[model_id]])
+
+        if len(activations) == 1:
+            activations = activations[0]
+
+        return activations
+
+    def old_get_activation_from_model_id(self, model_ids):
         activations = []
         if isinstance(model_ids, int):
             model_ids = [model_ids]

@@ -34,12 +34,11 @@ def is_pareto_efficient(costs, return_mask=True):
 
 
 def has_improved(
-    current_best_losses,
-    global_best_losses,
+    current_epoch_best_metric,
+    global_best_metric,
     min_relative_improvement,
     objective_enum=ObjectiveEnum.MINIMIZATION,
     eps=1e-5,
-    topk=1,
 ):
     """Verify if the current_best_losses is better than global_best_losses given a min_relative_improvement.
 
@@ -53,15 +52,52 @@ def has_improved(
     Returns:
         [type]: [description]
     """
-    percentage_of_best_loss = current_best_losses / (global_best_losses + eps)
-    if objective_enum == ObjectiveEnum.MINIMIZATION:
-        better_models_mask = percentage_of_best_loss < (1 - min_relative_improvement)
-    else:
-        better_models_mask = percentage_of_best_loss > (1 - min_relative_improvement)
+    if isinstance(global_best_metric, float):
+        global_best_metric = (
+            torch.tensor([global_best_metric])
+            .type(current_epoch_best_metric.dtype)
+            .to(current_epoch_best_metric.device)
+        )
 
-    # current_best_losses.isinf()
+    percentage_of_best_loss = current_epoch_best_metric / (global_best_metric + eps)
+
+    if torch.all(global_best_metric.isinf()):
+        better_models_mask = torch.ones_like(global_best_metric).bool()
+    else:
+        if objective_enum == ObjectiveEnum.MINIMIZATION:
+            better_models_mask = percentage_of_best_loss < (
+                1 - min_relative_improvement
+            )
+        else:
+            better_models_mask = percentage_of_best_loss > (
+                1 + min_relative_improvement
+            )
 
     return percentage_of_best_loss, better_models_mask
+
+
+def select_top_k(monitored_metric, better_models_mask, best_k):
+    objective_enum = monitored_metric.objective
+    best_metrics = monitored_metric.current_reduction
+    if any(better_models_mask):
+        better_models_ids = torch.nonzero(better_models_mask)
+        best_k = min(best_k, better_models_ids.nelement())
+
+        if objective_enum == ObjectiveEnum.MINIMIZATION:
+            # topk return largest elements first by default
+            topk_indices = torch.topk(
+                best_metrics[better_models_mask], best_k, largest=False
+            ).indices
+        else:
+            topk_indices = torch.topk(
+                best_metrics[better_models_mask], best_k, largest=True
+            ).indices
+
+        better_models_ids = better_models_ids[topk_indices]
+        better_models_mask = torch.zeros_like(better_models_mask).bool()
+        better_models_mask[better_models_ids] = True
+
+    return better_models_mask
 
 
 def debug_assess_model(logits, y_labels, model_id):

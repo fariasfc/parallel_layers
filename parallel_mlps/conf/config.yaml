@@ -4,7 +4,7 @@ training:
     n_splits: 10
     validation_rate_from_train: 0.25
     debug_test: False
-    reset_exhausted_models: False
+    reset_exhausted_models: True
 
     dataset: "diabetes"
 
@@ -15,6 +15,7 @@ training:
     drop_samples: null
     input_perturbation_strategy: null #sqrt #random_sparsity0.1 #sqrt
     regularization_gamma: 1e-4
+    monitored_metric: "loss" #"overall_acc" #
 
     find_num_neurons_first: False
 

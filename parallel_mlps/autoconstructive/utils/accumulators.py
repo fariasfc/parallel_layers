@@ -13,13 +13,13 @@ class ObjectiveEnum(Enum):
     MINIMIZATION = "minimization"
 
 
-class Accumulator:
+class Objective:
     def __init__(
         self,
         name: str,
         objective: ObjectiveEnum = ObjectiveEnum.MINIMIZATION,
         reduction_fn: Callable[[Tensor], Tensor] = torch.mean,
-        min_relative_improvement: float = 0.0
+        min_relative_improvement: float = 0.0,
     ) -> None:
         self.name = name
         self.objective = objective
@@ -32,7 +32,13 @@ class Accumulator:
         self._improved = False
         self.is_dirty = True
 
-    def update(self, values: Tensor):
+    def set_values(self, values: Tensor):
+        self.is_dirty = True
+        self._improved = False
+        self.tensors = values
+        self.apply_reduction()
+
+    def accumulate_values(self, values: Tensor):
         self.is_dirty = True
         self._improved = False
         self.tensors.append(values)
@@ -45,14 +51,25 @@ class Accumulator:
         self._improved = False
         self.is_dirty = True
 
-    def reset_best_from_ids(self, model_ids_to_reset):
+    def get_initial_value(self):
         if self.objective == ObjectiveEnum.MAXIMIZATION:
             value = -float("inf")
         else:
             value = float("inf")
+        return value
 
-        if self.best is not None:    
+    def reset_best_from_ids(self, model_ids_to_reset):
+        value = self.get_initial_value()
+
+        if self.best is not None:
             self.best[model_ids_to_reset] = value
+
+    def get_best_k_ids(self, best_k=1):
+        best_ids_order = self.best.argsort()
+        if self.objective == ObjectiveEnum.MAXIMIZATION:
+            best_ids_order = best_ids_order.flip(0)
+
+        return best_ids_order[:best_k]
 
     @property
     def improved(self):
@@ -64,7 +81,10 @@ class Accumulator:
     def apply_reduction(self):
         self.is_dirty = False
 
-        self.current_reduction = self.reduction_fn(self.tensors)
+        if self.reduction_fn is not None:
+            self.current_reduction = self.reduction_fn(self.tensors)
+        else:
+            self.current_reduction = self.tensors
 
         if self.best is None:
             self.best = self.current_reduction.clone()
@@ -77,7 +97,12 @@ class Accumulator:
         # else:
         #     self._improved = self.current_reduction < self.best
         else:
-            _, self._improved = helpers.has_improved(self.current_reduction, self.best, self.min_relative_improvement, self.objective)
+            _, self._improved = helpers.has_improved(
+                self.current_reduction,
+                self.best,
+                self.min_relative_improvement,
+                self.objective,
+            )
 
         if torch.any(self._improved):
             self.best[self._improved] = self.current_reduction[self._improved]
@@ -89,7 +114,7 @@ class MultiAccumulators:
     def __init__(self, names: List[Tuple]) -> None:
         # names = [(loss, ObjectiveEnum.MINIMIZATION)]
         self.accumulators = {
-            name: Accumulator(name, objective) for (name, objective) in names
+            name: Objective(name, objective) for (name, objective) in names
         }
 
     def update(self, dict_list_values: Dict[str, Tensor]):

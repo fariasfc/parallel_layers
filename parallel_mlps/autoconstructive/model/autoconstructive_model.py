@@ -2,12 +2,14 @@ from collections import Counter
 import pymcdm
 from pathlib import Path
 from kneed import KneeLocator
+import heapq
 import multiprocessing
 from functools import partial
 from copy import deepcopy
+from autoconstructive.utils.multi_confusion_matrix import MultiConfusionMatrix
 from conf.config import MAP_ACTIVATION
 from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
-import heapq
+from queue import PriorityQueue
 import pandas as pd
 from enum import Enum
 
@@ -20,7 +22,7 @@ import numpy as np
 import logging
 import math
 from autoconstructive.utils import helpers
-from autoconstructive.utils.accumulators import Accumulator, ObjectiveEnum
+from autoconstructive.utils.accumulators import Objective, ObjectiveEnum
 from typing import Any, List, Optional, Type
 from torch.functional import Tensor
 from autoconstructive.model.parallel_mlp import MLP, ParallelMLPs, build_model_ids
@@ -153,6 +155,7 @@ class AutoConstructiveModel(nn.Module):
         drop_samples: Optional[float],
         input_perturbation: Optional[str],
         regularization_gamma: Optional[float],
+        monitored_metric: str,
         find_num_neurons_first: bool,
         num_workers: int,
         repetitions: int,
@@ -190,6 +193,7 @@ class AutoConstructiveModel(nn.Module):
         self.drop_samples = drop_samples
         self.input_perturbation = input_perturbation
         self.regularization_gamma = regularization_gamma
+        self.monitored_metric = monitored_metric
         self.find_num_neurons_first = find_num_neurons_first
         self.num_workers = num_workers
         self.repetitions = repetitions
@@ -244,10 +248,13 @@ class AutoConstructiveModel(nn.Module):
     def is_ensemble(self):
         return self.topk is not None and self.topk > 1
 
-    def append_to_validation_df(self, training_loss, validation_loss, model_ids):
+    def get_models_df(
+        self, training_loss, validation_loss, model_ids, append_to_validation=False
+    ):
         self.pmlps.eval()
         with torch.no_grad():
             current_rows = {
+                "model_id": self.pmlps.output__model_id[model_ids].cpu().numpy(),
                 "architecture_id": self.pmlps.output__architecture_id[model_ids]
                 .cpu()
                 .numpy(),
@@ -258,12 +265,8 @@ class AutoConstructiveModel(nn.Module):
                 .cpu()
                 .numpy(),
                 "activation": self.pmlps.get_activation_from_model_id(model_ids),
-                "training_loss": training_loss.current_reduction[model_ids]
-                .cpu()
-                .numpy(),
-                "validation_loss": validation_loss.current_reduction[model_ids]
-                .cpu()
-                .numpy(),
+                "training_loss": training_loss[model_ids].cpu().numpy(),
+                "validation_loss": validation_loss[model_ids].cpu().numpy(),
                 "model_id": model_ids,
                 "start_epoch": self.model__start_epoch[model_ids].cpu().numpy(),
                 "end_epoch": self.epoch,
@@ -273,23 +276,28 @@ class AutoConstructiveModel(nn.Module):
                 # results = []
                 results = {}
                 if dataloader:
+                    multi_cm = MultiConfusionMatrix(
+                        len(model_ids), self.pmlps.out_features, "cpu"
+                    )
                     x_val, y_val = dataloader.dataset[:]
                     y_preds = self.pmlps(
                         x_val.to(self.device)
                     ).cpu()  # [batch_size, num_unique_models, out_features]
-                    for model_id in model_ids:
-                        r = assess_model(
-                            y_preds[:, model_id, :].cpu().numpy(),
-                            y_val.cpu().numpy(),
-                            "",
-                        )[0]
-                        keys = list(r.keys())
-                        keys.remove("__confusion_matrix")
-                        for k in keys:
-                            if k not in results:
-                                results[k] = []
-                            # results.append(r[0]["__overall_acc"])
-                            results[k].append(r[k])
+                    multi_cm.update(y_preds, y_val)
+                    # for model_id in model_ids:
+                    #     r = assess_model(
+                    #         y_preds[:, model_id, :].cpu().numpy(),
+                    #         y_val.cpu().numpy(),
+                    #         "",
+                    #     )[0]
+                    #     keys = list(r.keys())
+                    #     keys.remove("__confusion_matrix")
+                    #     for k in keys:
+                    #         if k not in results:
+                    #             results[k] = []
+                    #         # results.append(r[0]["__overall_acc"])
+                    #         results[k].append(r[k])
+                    results = multi_cm.calculate_metrics()
                 return results
 
             # results = {}
@@ -322,9 +330,7 @@ class AutoConstructiveModel(nn.Module):
             for split in results.keys():
                 split_results = results[split]
                 for k in split_results.keys():
-                    current_rows[split + k.replace("__", "_")] = np.array(
-                        split_results[k]
-                    )
+                    current_rows[f"{split}_{k}"] = np.array(split_results[k])
             # if train_results:
             #     current_rows["train_overall_acc"] = train_results
 
@@ -343,7 +349,10 @@ class AutoConstructiveModel(nn.Module):
         # if test_results:
         #     current_rows
         current_df = pd.DataFrame(current_rows)
-        self.validation_df = pd.concat((self.validation_df, current_df))
+        if append_to_validation:
+            self.validation_df = pd.concat((self.validation_df, current_df))
+
+        return current_df
 
     def _get_dataloader(self, x: Tensor, y: Tensor, shuffle=True):
         if self.all_data_to_device:
@@ -370,6 +379,7 @@ class AutoConstructiveModel(nn.Module):
         train_dataloader: DataLoader,
         validation_dataloader: DataLoader,
         test_dataloader: Optional[DataLoader],
+        filter_pareto_frontier: bool = False,
     ):
         self.train_dataloader = train_dataloader
         self.validation_dataloader = validation_dataloader
@@ -410,134 +420,164 @@ class AutoConstructiveModel(nn.Module):
             self.optimizer_name, self.learning_rate, self.pmlps.parameters()
         )
 
-        epoch_train_loss = Accumulator(
+        epoch_train_loss = Objective(
             name="train_loss",
             objective=ObjectiveEnum.MINIMIZATION,
             reduction_fn=lambda individual_losses: torch.mean(
                 torch.cat(individual_losses, dim=0), dim=0
             ),
         )
-        epoch_validation_loss = Accumulator(
+        epoch_validation_loss = Objective(
             name="validation_loss",
             objective=ObjectiveEnum.MINIMIZATION,
             reduction_fn=lambda individual_losses: torch.mean(
                 torch.cat(individual_losses, dim=0), dim=0
             ),
-            min_relative_improvement=self.min_improvement,
+            # min_relative_improvement=self.min_improvement,
         )
-        best_validation_loss = torch.tensor(float("inf"))
-        model__current_best_validation_loss = torch.ones(
-            self.pmlps.num_unique_models
-        ).to(self.device) * float("inf")
-        model__global_best_validation_loss = torch.ones(
-            self.pmlps.num_unique_models
-        ).to(self.device) * float("inf")
+
+        epoch_multi_metrics_accumulator = Objective(
+            name="overall_acc",
+            objective=ObjectiveEnum.MAXIMIZATION,
+            reduction_fn=None,
+            # min_relative_improvement=self.min_improvement,
+        )
+
+        if self.monitored_metric == "overall_acc":
+            monitored_accumulator = epoch_multi_metrics_accumulator
+        else:
+            monitored_accumulator = epoch_validation_loss
+
+        model__global_best_metric = Objective(
+            name=monitored_accumulator.name,
+            objective=monitored_accumulator.objective,
+            reduction_fn=None,
+        )
+
+        best_metric = torch.tensor(monitored_accumulator.get_initial_value())
         self.current_patience = torch.zeros(self.pmlps.num_unique_models)
         self.model__start_epoch = torch.zeros(self.pmlps.num_unique_models)
         self.total_local_resets = 0
-        test_results = None
 
         best_mlps = []
+        pareto_mlps = []
 
         t = tqdm(range(self.num_epochs))
         for epoch in t:
             self.epoch = epoch
+
+            not_exhausted_models = (self.current_patience < self.local_patience).to(
+                self.device
+            )
+            num_not_exhausted_models = not_exhausted_models.sum()
+            if num_not_exhausted_models == 0:
+                self.logger.info(
+                    f"All models are exhausted. Stopping training at epoch {epoch}."
+                )
+                break
+
             self.train()
+
             epoch_train_loss.reset(reset_best=False)
-            reduced_train_loss = self.execute_loop(
-                self.train_dataloader, loss_function, optimizer, epoch_train_loss
+            models_train_loss, _ = self.execute_loop(
+                self.train_dataloader,
+                loss_function,
+                optimizer,
+                epoch_train_loss,
+                not_exhausted_models=not_exhausted_models,
             )  # [num_models]
-            epoch_best_train_loss = reduced_train_loss.min().cpu().item()
 
             self.eval()
+
             epoch_validation_loss.reset(reset_best=False)
-            with torch.no_grad():
-                reduced_validation_loss = self.execute_loop(
+            epoch_multi_metrics_accumulator.reset(reset_best=False)
+
+            return_multi_metrics = (
+                monitored_accumulator.name in ["overall_acc"]
+                or epoch == self.num_epochs - 1
+            )
+            with torch.inference_mode():
+                models_validation_loss, multi_metrics = self.execute_loop(
                     self.validation_dataloader,
                     loss_function,
                     None,
                     epoch_validation_loss,
+                    return_multi_metrics=return_multi_metrics,
                 )  # [num_models]
 
-                detached_reduced_train_loss = reduced_train_loss.detach()
-                detached_reduced_validation_loss = reduced_validation_loss.detach()
+                if multi_metrics is not None:
+                    epoch_multi_metrics_accumulator.set_values(
+                        multi_metrics[epoch_multi_metrics_accumulator.name]
+                    )
 
-            # TODO: ajustar para model__best_validation_loss usar o improved global (ja que estou resetando o best daquele modelo especifico quando paciencia estoura)
-            model__current_best_validation_loss[
-                epoch_validation_loss.improved
-            ] = detached_reduced_validation_loss[epoch_validation_loss.improved]
+                model__global_best_metric.reset()
+                model__global_best_metric.set_values(
+                    monitored_accumulator.current_reduction
+                )
 
-            # current_best_validation_loss, current_best_model_id = self._get_bests(model__current_best_validation_loss)
+                num_global_improves = model__global_best_metric.improved.sum()
+                if num_global_improves > 0:
+                    if filter_pareto_frontier:
+                        pareto_mlps
+                        # Adicionar mlp se ela for pareto frontier. Lembrar de tratar as funcoes de ativacao.
+                        # Talvez usar um dicionario[ativacao] = lista(pareto mlp)
+                    best_improved_model_ids = model__global_best_metric.get_best_k_ids(
+                        self.topk
+                    )
+                    for model_id in best_improved_model_ids.tolist():
+                        value = model__global_best_metric.current_reduction[model_id]
+                        # If minimization, we need to *-1 since low values have priorities over large values
+                        # heappop will pop the lowest value first
+                        if (
+                            model__global_best_metric.objective
+                            == ObjectiveEnum.MINIMIZATION
+                        ):
+                            value *= -1
+                        num_neurons = self.pmlps.model_id__num_hidden_neurons[model_id]
+                        model = self.pmlps.extract_mlps([model_id])[0]
 
-            percentage_diffs, better_models_mask = helpers.has_improved(
-                model__current_best_validation_loss,
-                model__global_best_validation_loss,
-                self.min_improvement,
-                epoch_validation_loss.objective,
-                eps=eps,
-                topk=self.topk,
-            )
-
-            # if current_best_validation_loss < best_validation_loss:
-            if any(better_models_mask):
-                better_models_ids = torch.nonzero(better_models_mask)
-                topk = min(self.topk, better_models_ids.nelement())
-                topk_indices = torch.topk(
-                    -model__current_best_validation_loss[better_models_mask], topk
-                ).indices
-                better_models_ids = better_models_ids[topk_indices]
-                model__global_best_validation_loss[
-                    better_models_mask
-                ] = model__current_best_validation_loss[better_models_mask]
-                best_validation_loss = model__global_best_validation_loss.min()
-                current_best_mlps = self.pmlps.extract_mlps(better_models_ids)
-                for best_mlp in current_best_mlps:
-                    best_mlp.metadata[
-                        "validation_loss"
-                    ] = detached_reduced_validation_loss[best_mlp.model_id]
-                    if len(best_mlps) < self.topk:
-                        # heapq uses the first item in tuple with <=, if it is equal, goes to the second elemt of the tuple.
-                        # https://stackoverflow.com/questions/53554199/heapq-push-typeerror-not-supported-between-instances/53554555
-                        heapq.heappush(
-                            best_mlps,
-                            (
-                                -best_mlp.metadata["validation_loss"],
-                                best_mlp.hidden_layer.weight.shape[0],
-                                id(best_mlp),
-                                best_mlp,
-                            ),
-                        )
-                    else:
-                        popped_mlp = heapq.heappushpop(
-                            best_mlps,
-                            (
-                                -best_mlp.metadata["validation_loss"],
-                                best_mlp.hidden_layer.weight.shape[0],
-                                id(best_mlp),
-                                best_mlp,
-                            ),
+                        item = (
+                            value,
+                            num_neurons,
+                            -models_validation_loss[model_id],
+                            torch.rand(
+                                1
+                            ),  # just to make sure we have different numbers if value and num_neurons are the same
+                            model_id,
+                            model,
                         )
 
-            self.current_patience[~epoch_validation_loss.improved] += 1
-            self.current_patience[epoch_validation_loss.improved] = 0
+                        heapq.heappush(best_mlps, item)
+
+                        if len(best_mlps) > self.topk:
+                            heapq.heappop(best_mlps)
+
+            self.current_patience[~monitored_accumulator.improved] += 1
+            self.current_patience[monitored_accumulator.improved] = 0
 
             if self.reset_exhausted_models:
-                self._reset_exhausted_models(epoch_train_loss, epoch_validation_loss)
+                with torch.inference_mode():
+                    self._reset_exhausted_models(monitored_accumulator)
 
             t.set_postfix(
-                train_loss=epoch_best_train_loss,
-                best_validation_loss=best_validation_loss,
+                perc_not_exhausted_models=num_not_exhausted_models
+                / self.pmlps.num_unique_models,
+                train_loss=models_train_loss.min(),
+                best_validation_loss=epoch_validation_loss.best.min(),
+                monitored_metric=monitored_accumulator.best[
+                    monitored_accumulator.get_best_k_ids(1)
+                ],
             )
 
             wandb.log(
                 {
-                    "train/loss/avg": detached_reduced_train_loss.mean().cpu(),
+                    "train/loss/avg": models_train_loss.detach().mean().cpu(),
                     "epoch": epoch,
                 }
             )
             wandb.log(
                 {
-                    "train/loss/min": detached_reduced_train_loss.min().cpu(),
+                    "train/loss/min": models_train_loss.detach().min().cpu(),
                     "epoch": epoch,
                 }
             )
@@ -563,13 +603,13 @@ class AutoConstructiveModel(nn.Module):
             # )
             wandb.log(
                 {
-                    "validation/loss/avg": detached_reduced_validation_loss.mean().cpu(),
+                    "validation/loss/avg": models_validation_loss.mean().cpu(),
                     "epoch": epoch,
                 }
             )
             wandb.log(
                 {
-                    "validation/loss/min": detached_reduced_validation_loss.min().cpu(),
+                    "validation/loss/min": models_validation_loss.min().cpu(),
                     "epoch": epoch,
                 }
             )
@@ -592,24 +632,93 @@ class AutoConstructiveModel(nn.Module):
             f"Reset {self.total_local_resets} mlps to construct this layer. num_trained_mlps so far: {self.num_trained_mlps}"
         )
 
-        # Removing priorities
-        best_mlps = nn.ModuleList([tup[-1] for tup in best_mlps])
-
-        if self.debug_test and self.test_dataloader is not None:
-            self.append_to_validation_df(
-                epoch_train_loss,
-                epoch_validation_loss,
+        if filter_pareto_frontier:
+            results_df = self.get_models_df(
+                epoch_train_loss.best,
+                epoch_validation_loss.best,
                 self.pmlps.output__model_id.cpu().tolist(),
             )
-            # back in path due to hydra output folder
-            filename = f"../../../analysis/data/validation_df_epoch{self.epoch}.csv"
-            # Path(filename).parent.mkdir(parents=True, exist_ok=True)
-            self.validation_df.to_csv(filename)
-            self.logger.info(f"Saved dataframe in {filename}")
+            results_df["activation"] = results_df["activation"].astype(str)
 
-        return best_mlps, best_validation_loss, model__global_best_validation_loss
+            mcdm_tuples = [
+                (("num_neurons", "median"), -1),
+                # (("validation_loss", "median"), -1),
+                # (("validation_loss", "std"), -1),
+                (("valid_overall_acc", "median"), 1),
+                (("valid_overall_acc", "std"), -1),
+            ]
+            mcdm_keys = [k[0] for k in mcdm_tuples]
+            types = [k[1] for k in mcdm_tuples]
+            grouped_df = (
+                results_df.groupby(["activation", "architecture_id"])
+                .agg(["median", "std"])
+                .sort_values(("valid_overall_acc", "median"), ascending=False)
+            )
 
-    def _reset_exhausted_models(self, epoch_train_loss, epoch_validation_loss):
+            decision_matrix = grouped_df[mcdm_keys].to_numpy()
+
+            pareto_mask = helpers.is_pareto_efficient(
+                decision_matrix * (-1 * np.array(types))
+            )  # transforming decision_matrix as costs to be minimized
+            grouped_df = grouped_df.iloc[pareto_mask, :]
+
+            decision_matrix = grouped_df[mcdm_keys].to_numpy()
+
+            mcdm_method = pymcdm.methods.TOPSIS(
+                pymcdm.normalizations.minmax_normalization
+            )
+
+            weights = pymcdm.weights.equal_weights(decision_matrix)
+            # weights = np.array([0.5, 0.4, 0.1])
+            grouped_df["rank"] = mcdm_method(decision_matrix, weights, types)
+
+            grouped_df = grouped_df.sort_values(
+                by=("valid_overall_acc", "median"), ascending=False
+            ).reset_index()
+
+            topk = min(self.topk, grouped_df.shape[0])
+
+            grouped_best = grouped_df.iloc[0:topk, :].reset_index()
+
+            best = (
+                results_df[
+                    results_df["architecture_id"].isin(grouped_best["architecture_id"])
+                ]
+                .sort_values(by="valid_overall_acc", ascending=False)
+                .iloc[:topk, :]
+            )
+            best = results_df.sort_values(by="valid_overall_acc", ascending=False).iloc[
+                :topk, :
+            ]
+            better_models_ids = best["model_id"].values.tolist()
+
+            best_mlps = self.pmlps.extract_mlps(better_models_ids)
+
+            if self.debug_test and self.test_dataloader is not None:
+                self.get_models_df(
+                    epoch_train_loss.current_reduction,
+                    epoch_validation_loss.current_reduction,
+                    self.pmlps.output__model_id.cpu().tolist(),
+                    True,
+                )
+                # back in path due to hydra output folder
+                filename = f"../../../analysis/data/validation_df_epoch{self.epoch}.csv"
+                # Path(filename).parent.mkdir(parents=True, exist_ok=True)
+                self.validation_df.to_csv(filename)
+                self.logger.info(f"Saved dataframe in {filename}")
+
+        best_metric = model__global_best_metric.best[
+            model__global_best_metric.get_best_k_ids(1)
+        ]
+
+        better_models_ids = [item[-2] for item in best_mlps]
+        best_model_metrics = model__global_best_metric.best[better_models_ids]
+        best_model_metric = best_model_metrics.min()
+        best_mlps = [item[-1] for item in best_mlps]
+
+        return best_mlps, best_model_metrics.min(), best_model_metric
+
+    def _reset_exhausted_models(self, monitored_metric):
         model_ids_to_reset = torch.where(self.current_patience > self.local_patience)[0]
 
         num_models_to_reset = len(model_ids_to_reset)
@@ -620,7 +729,7 @@ class AutoConstructiveModel(nn.Module):
             #     self.append_to_validation_df(
             #         epoch_train_loss, epoch_validation_loss, model_ids_to_reset
             #     )
-            epoch_validation_loss.reset_best_from_ids(model_ids_to_reset)
+            monitored_metric.reset_best_from_ids(model_ids_to_reset)
             self.total_local_resets += num_models_to_reset
             self.pmlps.reset_parameters(model_ids_to_reset)
             self.model__start_epoch[model_ids_to_reset] = self.epoch
@@ -659,10 +768,25 @@ class AutoConstructiveModel(nn.Module):
 
         return best_validation_loss, best_model_id
 
-    def execute_loop(self, dataloader, loss_function, optimizer, accumulator):
+    def execute_loop(
+        self,
+        dataloader,
+        loss_function,
+        optimizer,
+        accumulator,
+        not_exhausted_models=None,
+        return_multi_metrics=False,
+    ):
+        metrics = None
+        if return_multi_metrics:
+            multi_cm = MultiConfusionMatrix(
+                self.pmlps.num_unique_models, self.pmlps.out_features, "cpu"
+            )
+
         drop_samples = torch.zeros((self.batch_size, self.pmlps.num_unique_models)).to(
             self.device
         )
+
         for (x, y) in dataloader:
             x = x.to(self.device)
             y = y.to(self.device)
@@ -676,7 +800,7 @@ class AutoConstructiveModel(nn.Module):
                 loss_func=loss_function, preds=outputs, target=y
             )
 
-            if self.drop_samples is not None:
+            if self.drop_samples is not None and optimizer is not None:
                 if x.shape[0] != self.batch_size:
                     drop_samples = torch.zeros(
                         (x.shape[0], self.pmlps.num_unique_models)
@@ -690,27 +814,34 @@ class AutoConstructiveModel(nn.Module):
                 )
                 individual_losses = individual_losses + regularization_term
 
-            accumulator.update(individual_losses.detach())
-
-            # loss = individual_losses.mean(
-            #     0
-            # ).sum()  # [batch_size, num_models] -> [num_models] -> []
-            loss = individual_losses.mean(0)  # [batch_size, num_models] -> [num_models]
-            if not self.reset_exhausted_models:
-                loss = loss * (self.current_patience < self.local_patience).to(
-                    loss.device
-                )
-
-            loss = loss.sum()  #  [num_models]-> []
+            accumulator.accumulate_values(individual_losses.detach())
 
             if optimizer:
+                # loss = individual_losses.mean(
+                #     0
+                # ).sum()  # [batch_size, num_models] -> [num_models] -> []
+                loss = individual_losses.mean(
+                    0
+                )  # [batch_size, num_models] -> [num_models]
+                if not_exhausted_models is not None:
+                    loss = loss * not_exhausted_models
+
+                loss = loss.sum()  #  [num_models]-> []
+
                 loss.backward()
                 optimizer.step()
                 self.pmlps.enforce_input_perturbation()
 
-        reduced_accumulator = accumulator.apply_reduction()
+            if return_multi_metrics:
+                multi_cm.update(outputs, y)
 
-        return reduced_accumulator
+        with torch.inference_mode():
+            reduced_accumulator = accumulator.apply_reduction()
+
+        if return_multi_metrics:
+            metrics = multi_cm.calculate_metrics()
+
+        return reduced_accumulator, metrics
 
     def _apply_forward_transform_data(
         self,
@@ -967,7 +1098,12 @@ class AutoConstructiveModel(nn.Module):
             current_test_x = None
             current_test_y = None
 
-        global_best_validation_loss = float("inf")
+        objective = ObjectiveEnum.MINIMIZATION
+        global_best_metric = torch.tensor([float("inf")]).to(self.device)
+
+        if self.monitored_metric == "overall_acc":
+            objective = ObjectiveEnum.MAXIMIZATION
+            global_best_metric *= -1
 
         current_model = nn.Sequential()
 
@@ -1029,8 +1165,8 @@ class AutoConstructiveModel(nn.Module):
             )
             (
                 current_best_mlps,
-                current_best_validation_loss,
-                model__global_best_validation_loss,
+                current_best_metric,
+                model__current_best_metrics,
             ) = self._get_best_mlps(
                 hidden_neuron__model_id=hidden_neuron__model_id,
                 output__model_id=output__model_id,
@@ -1039,6 +1175,7 @@ class AutoConstructiveModel(nn.Module):
                 train_dataloader=train_dataloader,
                 validation_dataloader=validation_dataloader,
                 test_dataloader=test_dataloader,
+                filter_pareto_frontier=True,
             )
 
             current_best_mlp_nb_hidden = current_best_mlps[0].out_features
@@ -1071,24 +1208,29 @@ class AutoConstructiveModel(nn.Module):
 
             # percentage_of_global_best_loss = current_best_validation_loss / (global_best_validation_loss+eps)
             # better_model = percentage_of_global_best_loss < (1-self.min_improvement)
-            percentage_best_validation_loss, better_model = helpers.has_improved(
-                current_best_validation_loss,
-                global_best_validation_loss,
+            percentage_best_metric, better_model = helpers.has_improved(
+                current_best_metric.to(self.device),
+                global_best_metric,
                 self.min_improvement,
-                ObjectiveEnum.MINIMIZATION,
+                objective,
                 eps,
             )
 
-            self.logger.info(
-                f"percentage_of_global_best_loss({percentage_best_validation_loss}) = current_best_validation_loss({current_best_validation_loss})/global_best_validation_loss({global_best_validation_loss}) < {1-self.min_improvement} (={better_model})."
-            )
+            if objective == ObjectiveEnum.MINIMIZATION:
+                self.logger.info(
+                    f"percentage_best_metric({percentage_best_metric}) = current_best_metric({current_best_metric})/global_best_metric({global_best_metric}) < {1-self.min_improvement} (={better_model})."
+                )
+            else:
+                self.logger.info(
+                    f"percentage_best_metric({percentage_best_metric}) = current_best_metric({current_best_metric})/global_best_metric({global_best_metric}) > {1+self.min_improvement} (={better_model})."
+                )
 
             if better_model:
                 self.best_model_sequential = deepcopy(current_model)
                 self.logger.info(
-                    f"Improved validation loss from {global_best_validation_loss} to {current_best_validation_loss}. Setting current_patience=0. Current best model with {len(self.best_model_sequential)-1} layers: ({self.best_model_sequential})."
+                    f"Improved {self.monitored_metric} from {global_best_metric} to {current_best_metric}. Setting current_patience=0. Current best model with {len(self.best_model_sequential)-1} layers: ({self.best_model_sequential})."
                 )
-                global_best_validation_loss = current_best_validation_loss
+                global_best_metric = current_best_metric.to(self.device)
                 current_patience = 0
             else:
                 current_patience += 1
@@ -1096,11 +1238,12 @@ class AutoConstructiveModel(nn.Module):
                     f"No improvement. current_patience={current_patience}."
                 )
 
-            if current_best_validation_loss < eps:
-                self.logger.info(
-                    f"current_best_validation_loss ({current_best_validation_loss}) < eps ({eps}). Stopping fit."
-                )
-                break
+            if objective == ObjectiveEnum.MINIMIZATION:
+                if current_best_metric < eps:
+                    self.logger.info(
+                        f"current_best_metric ({current_best_metric}) < eps ({eps}). Stopping fit."
+                    )
+                    break
 
             if self.stack_hidden_layers:
                 # current_best_mlps = current_best_mlps[:-1]

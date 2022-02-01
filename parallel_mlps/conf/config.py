@@ -27,6 +27,7 @@ class TrainingConfig:
     drop_samples: Optional[float]
     input_perturbation_strategy: Optional[str]
     regularization_gamma: Optional[float]
+    monitored_metric: str
     find_num_neurons_first: bool
 
 
