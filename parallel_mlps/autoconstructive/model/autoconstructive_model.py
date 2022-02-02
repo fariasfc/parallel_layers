@@ -1,4 +1,5 @@
 from collections import Counter
+
 import pymcdm
 from pathlib import Path
 from kneed import KneeLocator
@@ -463,6 +464,7 @@ class AutoConstructiveModel(nn.Module):
         pareto_mlps = []
 
         t = tqdm(range(self.num_epochs))
+        pmlps_df = pd.DataFrame()
         for epoch in t:
             self.epoch = epoch
 
@@ -515,42 +517,119 @@ class AutoConstructiveModel(nn.Module):
                     monitored_accumulator.current_reduction
                 )
 
-                num_global_improves = model__global_best_metric.improved.sum()
-                if num_global_improves > 0:
+                if torch.any(model__global_best_metric.improved):
                     if filter_pareto_frontier:
-                        pareto_mlps
                         # Adicionar mlp se ela for pareto frontier. Lembrar de tratar as funcoes de ativacao.
                         # Talvez usar um dicionario[ativacao] = lista(pareto mlp)
-                    best_improved_model_ids = model__global_best_metric.get_best_k_ids(
-                        self.topk
-                    )
-                    for model_id in best_improved_model_ids.tolist():
-                        value = model__global_best_metric.current_reduction[model_id]
-                        # If minimization, we need to *-1 since low values have priorities over large values
-                        # heappop will pop the lowest value first
+                        best_improved_model_ids = (
+                            model__global_best_metric.get_best_k_ids(
+                                -1, only_improved=True
+                            )
+                        )
+                        best_num_neurons = self.pmlps.model_id__num_hidden_neurons[
+                            best_improved_model_ids
+                        ]
+                        best_metrics = model__global_best_metric.best[
+                            best_improved_model_ids
+                        ]
+                        # architecture_ids = self.pmlps.output__architecture_id[
+                        #     best_improved_model_ids
+                        # ]
+
                         if (
                             model__global_best_metric.objective
-                            == ObjectiveEnum.MINIMIZATION
+                            == ObjectiveEnum.MAXIMIZATION
                         ):
-                            value *= -1
-                        num_neurons = self.pmlps.model_id__num_hidden_neurons[model_id]
-                        model = self.pmlps.extract_mlps([model_id])[0]
+                            best_metrics *= -1
 
-                        item = (
-                            value,
-                            num_neurons,
-                            -models_validation_loss[model_id],
-                            torch.rand(
-                                1
-                            ),  # just to make sure we have different numbers if value and num_neurons are the same
-                            model_id,
-                            model,
+                        pmlps_df = pd.concat(
+                            (
+                                pmlps_df,
+                                pd.DataFrame(
+                                    {
+                                        "num_neurons": best_num_neurons.cpu(),
+                                        "metrics": best_metrics,
+                                        "model_id": best_improved_model_ids,
+                                        "epoch": epoch,
+                                        "dominant_solution": False,
+                                    }
+                                ),
+                            ),
+                        )
+                        pmlps_df["dominant_solution"] = helpers.is_pareto_efficient(
+                            pmlps_df[["num_neurons", "metrics"]].values
                         )
 
-                        heapq.heappush(best_mlps, item)
+                        if len(pareto_mlps) == 0:
+                            pmlps_df = pmlps_df[pmlps_df["dominant_solution"]]
+                            to_add_model_ids = pmlps_df["model_id"].tolist()
+                            dominant_mlps = self.pmlps.extract_mlps(to_add_model_ids)
+                            pareto_mlps = list(zip(to_add_model_ids, dominant_mlps))
+                        else:
+                            # Removing previously dominant solutions
+                            to_remove_mask = ~pmlps_df["dominant_solution"] & (
+                                pmlps_df["epoch"] != epoch
+                            )
+                            ids_to_remove = (
+                                (to_remove_mask.values).nonzero()[0].tolist()
+                            )
 
-                        if len(best_mlps) > self.topk:
-                            heapq.heappop(best_mlps)
+                            if len(ids_to_remove) > 0:
+                                for e in sorted(ids_to_remove, reverse=True):
+                                    del pareto_mlps[e]
+
+                            # Updating df to contain only valid models
+                            pmlps_df = pmlps_df[pmlps_df["dominant_solution"]]
+
+                            # Adding new models
+                            to_add_model_ids = pmlps_df[pmlps_df["epoch"] == epoch][
+                                "model_id"
+                            ].tolist()
+
+                            if len(to_add_model_ids) > 0:
+                                pareto_mlps = pareto_mlps + list(
+                                    zip(
+                                        to_add_model_ids,
+                                        self.pmlps.extract_mlps(to_add_model_ids),
+                                    )
+                                )
+
+                    else:
+                        best_improved_model_ids = (
+                            model__global_best_metric.get_best_k_ids(self.topk)
+                        )
+
+                        for model_id in best_improved_model_ids.tolist():
+                            value = model__global_best_metric.current_reduction[
+                                model_id
+                            ]
+                            # If minimization, we need to *-1 since low values have priorities over large values
+                            # heappop will pop the lowest value first
+                            if (
+                                model__global_best_metric.objective
+                                == ObjectiveEnum.MINIMIZATION
+                            ):
+                                value *= -1
+                            num_neurons = self.pmlps.model_id__num_hidden_neurons[
+                                model_id
+                            ]
+                            model = self.pmlps.extract_mlps([model_id])[0]
+
+                            item = (
+                                value,
+                                num_neurons,
+                                -models_validation_loss[model_id],
+                                torch.rand(
+                                    1
+                                ),  # just to make sure we have different numbers if value and num_neurons are the same
+                                model_id,
+                                model,
+                            )
+
+                            heapq.heappush(best_mlps, item)
+
+                            if len(best_mlps) > self.topk:
+                                heapq.heappop(best_mlps)
 
             self.current_patience[~monitored_accumulator.improved] += 1
             self.current_patience[monitored_accumulator.improved] = 0
@@ -633,90 +712,131 @@ class AutoConstructiveModel(nn.Module):
         )
 
         if filter_pareto_frontier:
-            results_df = self.get_models_df(
-                epoch_train_loss.best,
-                epoch_validation_loss.best,
-                self.pmlps.output__model_id.cpu().tolist(),
-            )
-            results_df["activation"] = results_df["activation"].astype(str)
-
             mcdm_tuples = [
-                (("num_neurons", "median"), -1),
-                # (("validation_loss", "median"), -1),
-                # (("validation_loss", "std"), -1),
-                (("valid_overall_acc", "median"), 1),
-                (("valid_overall_acc", "std"), -1),
+                ("num_neurons", -1),
+                ("metrics", -1),
             ]
             mcdm_keys = [k[0] for k in mcdm_tuples]
             types = [k[1] for k in mcdm_tuples]
-            grouped_df = (
-                results_df.groupby(["activation", "architecture_id"])
-                .agg(["median", "std"])
-                .sort_values(("valid_overall_acc", "median"), ascending=False)
-            )
-
-            decision_matrix = grouped_df[mcdm_keys].to_numpy()
-
-            pareto_mask = helpers.is_pareto_efficient(
-                decision_matrix * (-1 * np.array(types))
-            )  # transforming decision_matrix as costs to be minimized
-            grouped_df = grouped_df.iloc[pareto_mask, :]
-
-            decision_matrix = grouped_df[mcdm_keys].to_numpy()
-
+            decision_matrix = pmlps_df[mcdm_keys].to_numpy()
             mcdm_method = pymcdm.methods.TOPSIS(
                 pymcdm.normalizations.minmax_normalization
             )
+            if self.monitored_metric == "overall_acc":
+                best_and_worst_theoretical_mlps = np.array(
+                    [[0, -1], [self.pmlps.model_id__num_hidden_neurons.max().item(), 0]]
+                )
+                decision_matrix = np.vstack(
+                    (decision_matrix, best_and_worst_theoretical_mlps)
+                )
 
             weights = pymcdm.weights.equal_weights(decision_matrix)
             # weights = np.array([0.5, 0.4, 0.1])
-            grouped_df["rank"] = mcdm_method(decision_matrix, weights, types)
+            ranks = mcdm_method(decision_matrix, weights, types)
+            # removing best_and_worst_theoretical_mlps
+            pmlps_df["rank"] = ranks[:-2]
 
-            grouped_df = grouped_df.sort_values(
-                by=("valid_overall_acc", "median"), ascending=False
-            ).reset_index()
+            pmlps_df = pmlps_df.sort_values(by=["rank"], ascending=False).reset_index()
+            print(pmlps_df)
 
-            topk = min(self.topk, grouped_df.shape[0])
+            topk = min(self.topk, pmlps_df.shape[0])
 
-            grouped_best = grouped_df.iloc[0:topk, :].reset_index()
+            chosen_df = pmlps_df.iloc[:topk, :].reset_index()
+            chosen_model_ids = chosen_df["model_id"].tolist()
+            best_mlps = [e[1] for e in pareto_mlps if e[0] in chosen_model_ids]
+            if model__global_best_metric.objective == ObjectiveEnum.MAXIMIZATION:
+                pmlps_df["metrics"] *= -1
 
-            best = (
-                results_df[
-                    results_df["architecture_id"].isin(grouped_best["architecture_id"])
-                ]
-                .sort_values(by="valid_overall_acc", ascending=False)
-                .iloc[:topk, :]
-            )
-            best = results_df.sort_values(by="valid_overall_acc", ascending=False).iloc[
-                :topk, :
-            ]
-            better_models_ids = best["model_id"].values.tolist()
+        # if filter_pareto_frontier:
+        #     results_df = self.get_models_df(
+        #         epoch_train_loss.best,
+        #         epoch_validation_loss.best,
+        #         self.pmlps.output__model_id.cpu().tolist(),
+        #     )
+        #     results_df["activation"] = results_df["activation"].astype(str)
 
-            best_mlps = self.pmlps.extract_mlps(better_models_ids)
+        #     mcdm_tuples = [
+        #         (("num_neurons", "median"), -1),
+        #         # (("validation_loss", "median"), -1),
+        #         # (("validation_loss", "std"), -1),
+        #         (("valid_overall_acc", "median"), 1),
+        #         (("valid_overall_acc", "std"), -1),
+        #     ]
+        #     mcdm_keys = [k[0] for k in mcdm_tuples]
+        #     types = [k[1] for k in mcdm_tuples]
+        #     grouped_df = (
+        #         results_df.groupby(["activation", "architecture_id"])
+        #         .agg(["median", "std"])
+        #         .sort_values(("valid_overall_acc", "median"), ascending=False)
+        #     )
 
-            if self.debug_test and self.test_dataloader is not None:
-                self.get_models_df(
-                    epoch_train_loss.current_reduction,
-                    epoch_validation_loss.current_reduction,
-                    self.pmlps.output__model_id.cpu().tolist(),
-                    True,
-                )
-                # back in path due to hydra output folder
-                filename = f"../../../analysis/data/validation_df_epoch{self.epoch}.csv"
-                # Path(filename).parent.mkdir(parents=True, exist_ok=True)
-                self.validation_df.to_csv(filename)
-                self.logger.info(f"Saved dataframe in {filename}")
+        #     decision_matrix = grouped_df[mcdm_keys].to_numpy()
 
-        best_metric = model__global_best_metric.best[
-            model__global_best_metric.get_best_k_ids(1)
-        ]
+        #     pareto_mask = helpers.is_pareto_efficient(
+        #         decision_matrix * (-1 * np.array(types))
+        #     )  # transforming decision_matrix as costs to be minimized
+        #     grouped_df = grouped_df.iloc[pareto_mask, :]
 
-        better_models_ids = [item[-2] for item in best_mlps]
-        best_model_metrics = model__global_best_metric.best[better_models_ids]
-        best_model_metric = best_model_metrics.min()
-        best_mlps = [item[-1] for item in best_mlps]
+        #     decision_matrix = grouped_df[mcdm_keys].to_numpy()
 
-        return best_mlps, best_model_metrics.min(), best_model_metric
+        #     mcdm_method = pymcdm.methods.TOPSIS(
+        #         pymcdm.normalizations.minmax_normalization
+        #     )
+
+        #     weights = pymcdm.weights.equal_weights(decision_matrix)
+        #     # weights = np.array([0.5, 0.4, 0.1])
+        #     grouped_df["rank"] = mcdm_method(decision_matrix, weights, types)
+
+        #     grouped_df = grouped_df.sort_values(
+        #         by=("valid_overall_acc", "median"), ascending=False
+        #     ).reset_index()
+
+        #     topk = min(self.topk, grouped_df.shape[0])
+
+        #     grouped_best = grouped_df.iloc[0:topk, :].reset_index()
+
+        #     best = (
+        #         results_df[
+        #             results_df["architecture_id"].isin(grouped_best["architecture_id"])
+        #         ]
+        #         .sort_values(by="valid_overall_acc", ascending=False)
+        #         .iloc[:topk, :]
+        #     )
+        #     best = results_df.sort_values(by="valid_overall_acc", ascending=False).iloc[
+        #         :topk, :
+        #     ]
+        #     better_models_ids = best["model_id"].values.tolist()
+
+        #     best_mlps = self.pmlps.extract_mlps(better_models_ids)
+
+        #     if self.debug_test and self.test_dataloader is not None:
+        #         self.get_models_df(
+        #             epoch_train_loss.current_reduction,
+        #             epoch_validation_loss.current_reduction,
+        #             self.pmlps.output__model_id.cpu().tolist(),
+        #             True,
+        #         )
+        #         # back in path due to hydra output folder
+        #         filename = f"../../../analysis/data/validation_df_epoch{self.epoch}.csv"
+        #         # Path(filename).parent.mkdir(parents=True, exist_ok=True)
+        #         self.validation_df.to_csv(filename)
+        #         self.logger.info(f"Saved dataframe in {filename}")
+
+        # best_metric = model__global_best_metric.best[
+        #     model__global_best_metric.get_best_k_ids(1)
+        # ]
+
+        # better_models_ids = [item[-2] for item in best_mlps]
+        # best_model_metrics = model__global_best_metric.best[better_models_ids]
+        # best_model_metric = best_model_metrics.min()
+        # best_mlps = [item[-1] for item in best_mlps]
+
+        # return best_mlps, best_model_metrics.min(), best_model_metric
+        return (
+            best_mlps,
+            torch.tensor(chosen_df["metrics"].min()),
+            chosen_df["metrics"].to_numpy(),
+        )
 
     def _reset_exhausted_models(self, monitored_metric):
         model_ids_to_reset = torch.where(self.current_patience > self.local_patience)[0]
@@ -780,7 +900,9 @@ class AutoConstructiveModel(nn.Module):
         metrics = None
         if return_multi_metrics:
             multi_cm = MultiConfusionMatrix(
-                self.pmlps.num_unique_models, self.pmlps.out_features, "cpu"
+                self.pmlps.num_unique_models,
+                self.pmlps.out_features,
+                "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
             )
 
         drop_samples = torch.zeros((self.batch_size, self.pmlps.num_unique_models)).to(
@@ -1208,13 +1330,22 @@ class AutoConstructiveModel(nn.Module):
 
             # percentage_of_global_best_loss = current_best_validation_loss / (global_best_validation_loss+eps)
             # better_model = percentage_of_global_best_loss < (1-self.min_improvement)
-            percentage_best_metric, better_model = helpers.has_improved(
-                current_best_metric.to(self.device),
-                global_best_metric,
-                self.min_improvement,
-                objective,
-                eps,
-            )
+            if self.best_model_sequential is None:
+                better_model = (
+                    torch.ones_like(current_best_metric)
+                    .bool()
+                    .unsqueeze(-1)
+                    .to(self.device)
+                )
+                percentage_best_metric = None
+            else:
+                percentage_best_metric, better_model = helpers.has_improved(
+                    current_best_metric.to(self.device),
+                    global_best_metric,
+                    self.min_improvement,
+                    objective,
+                    eps,
+                )
 
             if objective == ObjectiveEnum.MINIMIZATION:
                 self.logger.info(

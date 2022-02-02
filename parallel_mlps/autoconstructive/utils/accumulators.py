@@ -64,12 +64,21 @@ class Objective:
         if self.best is not None:
             self.best[model_ids_to_reset] = value
 
-    def get_best_k_ids(self, best_k=1):
-        best_ids_order = self.best.argsort()
-        if self.objective == ObjectiveEnum.MAXIMIZATION:
-            best_ids_order = best_ids_order.flip(0)
+    def get_best_k_ids(self, best_k=1, only_improved=False):
+        if only_improved:
+            best_k = self.improved.sum()
+            if self.objective == ObjectiveEnum.MAXIMIZATION:
+                best = self.best * ((~self.improved) * -float("inf"))
+            else:
+                best = self.best * ((~self.improved) * float("inf"))
+        else:
+            best = self.best
 
-        return best_ids_order[:best_k]
+        best_ids = torch.topk(
+            best, best_k, largest=self.objective == ObjectiveEnum.MAXIMIZATION
+        ).indices
+
+        return best_ids
 
     @property
     def improved(self):

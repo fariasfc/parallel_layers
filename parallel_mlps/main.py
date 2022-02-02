@@ -1,4 +1,5 @@
 import os
+from pyinstrument import Profiler
 from typing import Any, Dict
 from conf.config import (
     AutoConstructiveConfig,
@@ -172,6 +173,9 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         y_test_debug = None
 
     start = perf_counter()
+
+    # profiler = Profiler()
+    # profiler.start()
     auto_constructive.fit(
         x_train=x_train,
         y_train=y_train,
@@ -180,6 +184,8 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         x_test=x_test_debug,
         y_test=y_test_debug,
     )
+    # profiler.stop()
+    # profiler.open_in_browser()
     end = perf_counter()
 
     wandb.run.summary.update(

@@ -61,17 +61,10 @@ def has_improved(
 
     percentage_of_best_loss = current_epoch_best_metric / (global_best_metric + eps)
 
-    if torch.all(global_best_metric.isinf()):
-        better_models_mask = torch.ones_like(global_best_metric).bool()
+    if objective_enum == ObjectiveEnum.MINIMIZATION:
+        better_models_mask = percentage_of_best_loss < (1 - min_relative_improvement)
     else:
-        if objective_enum == ObjectiveEnum.MINIMIZATION:
-            better_models_mask = percentage_of_best_loss < (
-                1 - min_relative_improvement
-            )
-        else:
-            better_models_mask = percentage_of_best_loss > (
-                1 + min_relative_improvement
-            )
+        better_models_mask = percentage_of_best_loss > (1 + min_relative_improvement)
 
     return percentage_of_best_loss, better_models_mask
 
