@@ -1,5 +1,6 @@
 import os
-from pyinstrument import Profiler
+
+# from pyinstrument import Profiler
 from typing import Any, Dict
 from conf.config import (
     AutoConstructiveConfig,
