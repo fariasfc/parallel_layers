@@ -1,4 +1,7 @@
 import pytest
+import sklearn.metrics
+import numpy as np
+import math
 from pycm import ConfusionMatrix
 import pycm
 import torch
@@ -114,6 +117,42 @@ def test_multi_confusion_matrix_3d():
     print(expected_cm)
     assert torch.equal(cm, expected_cm)
     assert torch.equal(cm, mcm.cm)
+
+
+def test_multimetrics_against_pycm():
+    batch_size = 8
+    n_rows = (8 * 4) + 3
+    n_classes = 3
+    n_models = 3
+    predictions = torch.rand((n_rows, n_models, n_classes))
+    predictions = predictions.argmax(-1)
+
+    targets = torch.arange(n_rows) % n_classes
+
+    # MCM PREPARATIOn
+    mcm = MultiConfusionMatrix(n_models, n_classes)
+    for b in range(math.ceil(n_rows / batch_size)):
+        start = b * batch_size
+        end = min((b + 1) * batch_size, n_rows)
+        p = predictions[start:end]
+        t = targets[start:end]
+        mcm.update(p, t)
+
+    mcm_metrics = mcm.calculate_metrics()
+
+    for m in range(n_models):
+        p = predictions[:, m].numpy()
+        cm = ConfusionMatrix(actual_vector=targets.numpy(), predict_vector=p)
+        # Comparisons
+        # Whole Confusion Matrix
+        np.testing.assert_equal(cm.to_array(), mcm.cm[m].numpy())
+        # Overall ACC
+        assert cm.Overall_ACC == mcm_metrics["overall_acc"][m]
+        # Matthews Correletaion Coefficient
+        assert (
+            sklearn.metrics.matthews_corrcoef(p, targets)
+            == mcm_metrics["matthews_corrcoef"][m]
+        )
 
 
 def test_pycm_equivalence():

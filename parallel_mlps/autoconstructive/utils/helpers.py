@@ -6,6 +6,13 @@ from torch.nn import init
 from autoconstructive.utils.accumulators import ObjectiveEnum
 from experiment_utils import assess_model
 
+def save_flattend_df(pmlps_df, filename):#f"find_num_neurons_pmlps_df_current_layer_index_{self.current_layer_index}.csv" )
+    to_save_pmlps_df = pmlps_df.copy()
+    to_save_pmlps_df.columns = [
+        " ".join(col).strip() for col in to_save_pmlps_df.columns.values
+    ]
+
+    to_save_pmlps_df.to_csv(filename)
 
 def is_pareto_efficient(costs, return_mask=True):
     """

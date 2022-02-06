@@ -1,10 +1,10 @@
 training:
     data_home: "~/fcf/projects/parallel_mlps/datasets/"
-    distance_name: "correlation"
+    distance_name: null #"correlation"
     n_splits: 10
     validation_rate_from_train: 0.25
     debug_test: False
-    reset_exhausted_models: True
+    reset_exhausted_models: False
 
     dataset: "diabetes"
 
@@ -15,7 +15,7 @@ training:
     drop_samples: null
     input_perturbation_strategy: null #sqrt #random_sparsity0.1 #sqrt
     regularization_gamma: 1e-4
-    monitored_metric: "loss" #"overall_acc" #
+    monitored_metric: "matthews_corrcoef" #"overall_acc" #"validation_loss" #
 
     find_num_neurons_first: False
 
@@ -23,7 +23,7 @@ training:
 model:
     all_data_to_device: True
     loss_function: cross_entropy
-    optimizer_name: sgd #adam
+    optimizer_name: adam
     learning_rate: 3e-4
     num_workers: 0
     repetitions: 10

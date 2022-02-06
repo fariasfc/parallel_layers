@@ -106,6 +106,14 @@ MAP_ACTIVATION = {
     "identity": nn.Identity,
     "elu": nn.ELU,
     "gelu": nn.GELU,
+    "Sigmoid()": nn.Sigmoid,
+    "ReLU()": nn.ReLU,
+    "Tanh()": nn.Tanh,
+    "SELU()": nn.SELU,
+    "LeakyReLU": nn.LeakyReLU,
+    "Identity()": nn.Identity,
+    "ELU()": nn.ELU,
+    "GELU": nn.GELU,
 }
 
 

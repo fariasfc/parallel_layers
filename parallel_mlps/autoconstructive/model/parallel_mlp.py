@@ -461,10 +461,9 @@ class ParallelMLPs(nn.Module):
     def get_num_hidden_neurons_from_model_id(self, model_id):
         return ((self.hidden_neuron__model_id == model_id)).sum()
 
-    def get_architecture_id_from_model_id(self, model_id):
-        index = self.output__model_id == model_id
-        architecture_id = self.output__architecture_id[index][0]
-        return architecture_id
+    def get_architecture_ids_from_model_ids(self, model_ids):
+        architecture_id = self.output__architecture_id[model_ids]
+        return architecture_id.cpu().tolist()
 
     def get_activation_from_model_id(self, model_ids):
         activations = []

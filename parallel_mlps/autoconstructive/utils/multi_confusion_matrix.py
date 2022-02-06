@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from torch import Tensor
 
 
@@ -43,12 +44,44 @@ class MultiConfusionMatrix:
 
     def calculate_metrics(self):
         metrics = {}
-        total_samples = self.cm[0].sum()
+        self.total_samples = self.cm[0].sum()
 
         self.tp = self.cm.diagonal(dim1=-1, dim2=-2)
         self.fn = self.cm.sum(-1) - self.tp
         self.fp = self.cm.sum(-2) - self.tp
-        self.tn = total_samples - self.fn - self.fp - self.tp
-        metrics["overall_acc"] = self.tp.sum(-1) / total_samples
+        self.tn = self.total_samples - self.fn - self.fp - self.tp
+        metrics["overall_acc"] = self.tp.sum(-1) / self.total_samples
+        metrics["matthews_corrcoef"] = self._matthews_corrcoef()
 
         return metrics
+
+    def _matthews_corrcoef(self):
+        numerator = self.tp * self.tn - self.fp * self.fn
+        denominator = torch.sqrt(
+            (self.tp + self.fp)
+            * (self.tp + self.fn)
+            * (self.tn + self.fp)
+            * (self.tn + self.fn)
+        )
+        matt = numerator / denominator
+        C = self.cm
+        # C = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
+        t_sum = C.sum(dim=-1)
+        p_sum = C.sum(dim=-2)
+        n_correct = self.tp.sum(-1)
+        cov_ytyp = n_correct * self.total_samples - (t_sum * p_sum).sum(
+            -1
+        )  # torch.dot(t_sum, p_sum)
+        cov_ypyp = self.total_samples ** 2 - (p_sum * p_sum).sum(
+            -1
+        )  # torch.dot(p_sum, p_sum)
+        cov_ytyt = self.total_samples ** 2 - (t_sum * t_sum).sum(
+            -1
+        )  # torch.dot(t_sum, t_sum)
+
+        matt = cov_ytyp / torch.sqrt(cov_ytyt * cov_ypyp)
+        invalid_mask = (cov_ypyp * cov_ytyt) == 0
+
+        matt[invalid_mask] = 0.000000001
+
+        return matt
