@@ -18,6 +18,8 @@ training:
     monitored_metric: "matthews_corrcoef" #"overall_acc" #"validation_loss" #
 
     find_num_neurons_first: False
+    #num_neurons, metric
+    mcdm_weights: [0.2, 0.8]
 
     project_name: "novo_teste"
 model:

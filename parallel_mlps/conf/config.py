@@ -29,6 +29,7 @@ class TrainingConfig:
     regularization_gamma: Optional[float]
     monitored_metric: str
     find_num_neurons_first: bool
+    mcdm_weights: Optional[List[float]]
 
 
 @dataclass
@@ -99,21 +100,21 @@ def create_optimizer(optimizer_name, learning_rate, parameters) -> Optimizer:
 
 MAP_ACTIVATION = {
     "sigmoid": nn.Sigmoid,
-    "relu": nn.ReLU,
-    "tanh": nn.Tanh,
-    "selu": nn.SELU,
-    "leakyrelu": nn.LeakyReLU,
-    "identity": nn.Identity,
-    "elu": nn.ELU,
-    "gelu": nn.GELU,
     "Sigmoid()": nn.Sigmoid,
+    "relu": nn.ReLU,
     "ReLU()": nn.ReLU,
+    "tanh": nn.Tanh,
     "Tanh()": nn.Tanh,
+    "selu": nn.SELU,
     "SELU()": nn.SELU,
-    "LeakyReLU": nn.LeakyReLU,
+    "leakyrelu": nn.LeakyReLU,
+    "LeakyReLU(negative_slope=0.01)": nn.LeakyReLU,
+    "identity": nn.Identity,
     "Identity()": nn.Identity,
+    "elu": nn.ELU,
     "ELU()": nn.ELU,
-    "GELU": nn.GELU,
+    "gelu": nn.GELU,
+    "GELU()": nn.GELU,
 }
 
 

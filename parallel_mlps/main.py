@@ -122,6 +122,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         regularization_gamma=cfg.training.regularization_gamma,
         monitored_metric=cfg.training.monitored_metric,
         find_num_neurons_first=cfg.training.find_num_neurons_first,
+        mcdm_weights=cfg.training.mcdm_weights,
         num_workers=cfg.model.num_workers,
         repetitions=cfg.model.repetitions,
         repetitions_for_best_neuron=cfg.model.repetitions_for_best_neuron,
