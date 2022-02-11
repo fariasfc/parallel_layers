@@ -19,7 +19,7 @@ training:
 
     find_num_neurons_first: False
     #num_neurons, metric
-    mcdm_weights: [0.2, 0.8]
+    mcdm_weights: null #[0.2, 0.8]
 
     project_name: "novo_teste"
 model:
@@ -50,7 +50,7 @@ model:
     step_neurons: 1
     local_patience: 10
     global_patience: 2
-    transform_data_strategy: append_original_input
+    transform_data_strategy: no_strategy # append_original_input
     loss_rel_tol: 0.01
     min_improvement: 0.01
     device: "cuda"

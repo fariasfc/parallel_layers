@@ -1,4 +1,5 @@
 import torch
+import pandas as pd
 import numpy as np
 from torch import Tensor
 
@@ -8,9 +9,16 @@ class MultiConfusionMatrix:
     Rows = Ground Truth, Cols = Predictions
     """
 
-    def __init__(self, n_models: int, n_classes: int, device: str = "cpu") -> None:
+    def __init__(
+        self,
+        n_models: int,
+        n_classes: int,
+        device: str = "cpu",
+        model_ids: Tensor = None,
+    ) -> None:
         self.n_models = n_models
         self.n_classes = n_classes
+        self.model_ids = model_ids
         self.cm = torch.zeros(
             (self.n_models, self.n_classes, self.n_classes),
             device=device,
@@ -54,6 +62,16 @@ class MultiConfusionMatrix:
         metrics["matthews_corrcoef"] = self._matthews_corrcoef()
 
         return metrics
+
+    def to_dataframe(self, prefix=None):
+        df = pd.DataFrame(self.calculate_metrics())
+        if prefix is not None:
+            df.columns = [f"{prefix}{c}" for c in df.columns]
+        if self.model_ids is not None:
+            df["model_id"] = self.model_ids.cpu().numpy()
+            df = df.set_index("model_id")
+
+        return df
 
     def _matthews_corrcoef(self):
         numerator = self.tp * self.tn - self.fp * self.fn
