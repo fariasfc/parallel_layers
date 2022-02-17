@@ -149,9 +149,11 @@ def test_multimetrics_against_pycm():
         # Overall ACC
         assert cm.Overall_ACC == mcm_metrics["overall_acc"][m]
         # Matthews Correletaion Coefficient
-        assert (
-            sklearn.metrics.matthews_corrcoef(p, targets)
-            == mcm_metrics["matthews_corrcoef"][m]
+        np.testing.assert_allclose(
+            sklearn.metrics.matthews_corrcoef(p, targets),
+            mcm_metrics["matthews_corrcoef"][m].item(),
+            atol=1e-8,
+            rtol=0.9999,
         )
 
 
@@ -175,3 +177,64 @@ def test_pycm_equivalence():
             assert multi_cm.fp[model_id][c] == cm.FP[c]
             assert multi_cm.tn[model_id][c] == cm.TN[c]
             assert multi_cm.fn[model_id][c] == cm.FN[c]
+
+
+def test_multicm_masks():
+    n_classes = 3
+    n_models = 4
+    batch_size = 5
+    targets = torch.Tensor([0, 1, 2, 0, 0]).long()
+    # fmt: off
+    predictions = torch.Tensor(
+        [
+            [0, 0, 1, 2], 
+            [1, 1, 0, 1], 
+            [2, 1, 0, 2], 
+            [0, 2, 1, 1], 
+            [0, 1, 1, 0]
+        ]
+    ).long()
+    mask = torch.Tensor(
+        [
+            [0, 0, 1, 1],
+            [1, 1, 0, 1], 
+            [1, 1, 0, 1], 
+            [0, 0, 0, 1], 
+            [0, 1, 0, 0]]
+    ).long()
+    # fmt: on
+    torch.manual_seed(42)
+
+    x = torch.empty(n_models, batch_size, n_classes, n_classes)
+    for i in range(n_models):
+        for j in range(batch_size):
+            for k in range(n_classes):
+                for w in range(n_classes):
+                    x[i, j, k, w] = w + k * 10 + j * 100 + i * 1000
+
+    multi_cm = MultiConfusionMatrix(n_models, n_classes, "cpu")
+    multi_cm.update(predictions, targets, mask)
+
+    # fmt:off
+    expected_cm = torch.Tensor(
+        [
+            [
+                [0, 0, 0],
+                [0, 1, 0], 
+                [0, 0, 1]],
+            [
+                [0, 1, 0], 
+                [0, 1, 0], 
+                [0, 1, 0]],
+            [
+                [0, 1, 0], 
+                [0, 0, 0],
+                [0, 0, 0]],
+            [
+                [0, 1, 1],
+                [0, 1, 0], 
+                [0, 0, 1]],
+        ]
+    )
+    # fmt: on
+    assert torch.all(multi_cm.cm == expected_cm)

@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-
-
+import numpy as np
 from torch.functional import Tensor
 from parallel_mlps.autoconstructive.model.parallel_mlp import (
     ParallelMLPs,
@@ -379,8 +378,8 @@ def test_parallel_single_mlps_forward(parallel_mlp_object: ParallelMLPs, X: Tens
 def test_trainings(X, Y, parallel_mlp_object):
     reproducibility()
     lr = 1
-    atol = 1e-8
-    rtol = 0.99
+    atol = 1e-9
+    rtol = 0.99999
     parallel_optimizer = Adam(params=parallel_mlp_object.parameters(), lr=lr)
 
     single_models = [
@@ -409,8 +408,8 @@ def test_trainings(X, Y, parallel_mlp_object):
         candidate_losses = per_sample_candidate_losses.mean(0)
         candidate_losses.backward(gradient=gradient)
         parallel_optimizer.step()
-        print(candidate_losses)
-        print(parallel_mlp_object.hidden_layer.weight.mean())
+        # print(candidate_losses)
+        # print(parallel_mlp_object.hidden_layer.weight.mean())
 
         for i, (model, optimizer) in enumerate(zip(single_models, single_optimizers)):
             optimizer.zero_grad()
@@ -422,10 +421,48 @@ def test_trainings(X, Y, parallel_mlp_object):
             # Asserts
             assert torch.allclose(candidate_losses[i], loss, atol=atol, rtol=rtol)
 
-            m = parallel_mlp_object.extract_mlps([i])
-            # assert torch.allclose(m[0].weight, model[0].weight, atol=atol, rtol=rtol)
-            assert type(m[0]) == type(model)
-            # assert torch.allclose(m[2].weight, model[2].weight, atol=atol, rtol=rtol)
+            m = parallel_mlp_object.extract_mlps([i])[0]
+
+            np.testing.assert_allclose(
+                m.hidden_layer.weight.detach().cpu().numpy(),
+                model.hidden_layer.weight.detach().cpu().numpy(),
+                atol=atol,
+                rtol=rtol,
+            )
+            np.testing.assert_allclose(
+                m.hidden_layer.bias.detach().cpu().numpy(),
+                model.hidden_layer.bias.detach().cpu().numpy(),
+                atol=atol,
+                rtol=rtol,
+            )
+            np.testing.assert_allclose(
+                m.out_layer.weight.detach().cpu().numpy(),
+                model.out_layer.weight.detach().cpu().numpy(),
+                atol=atol,
+                rtol=rtol,
+            )
+            np.testing.assert_allclose(
+                m.out_layer.bias.detach().cpu().numpy(),
+                model.out_layer.bias.detach().cpu().numpy(),
+                atol=atol,
+                rtol=rtol,
+            )
+            assert m.activation == model.activation
+            assert type(m) == type(model)
+
+        if (e == 0) or (e == (num_epochs - 1)):
+            print(f"Epoch: {e}")
+            print(m.hidden_layer.weight)
+            print(model.hidden_layer.weight)
+
+            print(m.hidden_layer.bias)
+            print(model.hidden_layer.bias)
+
+            print(m.out_layer.weight)
+            print(model.out_layer.weight)
+
+            print(m.out_layer.bias)
+            print(model.out_layer.bias)
 
 
 @pytest.fixture

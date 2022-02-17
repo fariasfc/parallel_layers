@@ -24,18 +24,20 @@ class MultiConfusionMatrix:
             device=device,
             dtype=torch.int,
         )
+        self.current_cm = None
         self.n_models_arange = torch.arange(
             self.n_models, device=device, dtype=torch.long
         )
         self.one = torch.tensor([1], device=device, dtype=torch.int)
         self.device = device
 
-    def update(self, predictions: Tensor, targets: Tensor) -> None:
+    def update(self, predictions: Tensor, targets: Tensor, mask: Tensor = None) -> None:
         """Updates the Confuson Matrix
 
         Args:
                 predictions (Tensor): [batch_size, n_models]
                 targets (Tensor): [batch_size]
+                mask (Tensor): [batch_size, n_models]
         """
         with torch.inference_mode():
             if predictions.ndim > 2:
@@ -43,12 +45,34 @@ class MultiConfusionMatrix:
 
             if predictions.device != self.cm.device:
                 predictions = predictions.to(self.cm.device)
+            # cm[np.arange(self.n_models).repeat(batch_size), np.tile(np.arange(batch_size), n_models), targets.repeat(4).view(20), predictions.t().reshape(20)]=1
+            batch_size = targets.shape[0]
+            if self.current_cm is None or self.current_cm.shape[1] != batch_size:
+                self.current_cm = (
+                    torch.zeros(
+                        self.n_models, batch_size, self.n_classes, self.n_classes
+                    )
+                    .int()
+                    .to(self.cm.device)
+                )
 
-            self.cm.index_put_(
-                indices=(self.n_models_arange, targets[:, None], predictions),
-                values=self.one,
-                accumulate=True,
-            )
+            self.current_cm *= 0
+            self.current_cm[
+                torch.arange(self.n_models).repeat_interleave(targets.shape[0]),
+                torch.arange(targets.shape[0]).repeat(self.n_models),
+                targets.repeat(self.n_models),
+                predictions.t().reshape(-1),
+            ] = 1
+
+            if mask is not None:
+                self.current_cm *= mask.t()[:, :, None, None]
+
+            self.cm += self.current_cm.sum(1).int()
+            # self.cm.index_put_(
+            #     indices=(self.n_models_arange, targets[:, None], predictions),
+            #     values=self.one,
+            #     accumulate=True,
+            # )
 
     def calculate_metrics(self):
         metrics = {}

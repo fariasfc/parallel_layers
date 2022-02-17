@@ -155,6 +155,7 @@ class ParallelMLPs(nn.Module):
         hidden_neuron__model_id: List[int],
         output__model_id: List[int],
         output__architecture_id: List[int],
+        output__repetition: List[int],
         drop_samples: float,
         input_perturbation_strategy: str,
         activations: List[nn.Module],
@@ -179,6 +180,10 @@ class ParallelMLPs(nn.Module):
         self.output__model_id = torch.Tensor(output__model_id).long().to(self.device)
         self.output__architecture_id = (
             torch.Tensor(output__architecture_id).long().to(self.device)
+        )
+
+        self.output__repetition = (
+            torch.Tensor(output__repetition).long().to(self.device)
         )
 
         self.total_hidden_neurons = len(self.hidden_neuron__model_id)

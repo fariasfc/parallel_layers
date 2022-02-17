@@ -252,6 +252,8 @@ class AutoConstructiveModel(nn.Module):
 
         self.validation_df = pd.DataFrame()
 
+        self.train_indices = torch.zeros(())
+
     @property
     def is_ensemble(self):
         return self.topk is not None and self.topk > 1
@@ -363,11 +365,13 @@ class AutoConstructiveModel(nn.Module):
         return current_df
 
     def _get_dataloader(self, x: Tensor, y: Tensor, shuffle=True):
+        indices = torch.arange(x.shape[0])
         if self.all_data_to_device:
             x = x.to(self.device)
             y = y.to(self.device)
+            indices = indices.to(self.device)
 
-        dataset = TensorDataset(x, y)
+        dataset = TensorDataset(indices, x, y)
         dataloader = DataLoader(
             dataset=dataset,
             batch_size=self.batch_size,
@@ -395,18 +399,24 @@ class AutoConstructiveModel(nn.Module):
         loss_function = deepcopy(self.loss_function)
         loss_function.reduction = "none"
 
-        in_features = train_dataloader.dataset[0][0].shape[0]
-        out_features = len(train_dataloader.dataset.tensors[1].unique())
+        in_features = train_dataloader.dataset[0][1].shape[0]
+        out_features = len(train_dataloader.dataset.tensors[-1].unique())
 
         # profiler = pyinstrument.Profiler()
         # profiler.start()
         start = perf_counter()
+        output__repetition = (
+            torch.arange(self.repetitions)
+            .repeat_interleave(len(np.unique(output__model_id)) // self.repetitions)
+            .tolist()
+        )
         self.pmlps = ParallelMLPs(
             in_features=in_features,
             out_features=out_features,
             hidden_neuron__model_id=hidden_neuron__model_id,
             output__model_id=output__model_id,
             output__architecture_id=output__architecture_id,
+            output__repetition=output__repetition,
             drop_samples=self.drop_samples,
             input_perturbation_strategy=self.input_perturbation,
             activations=activations,
@@ -464,6 +474,17 @@ class AutoConstructiveModel(nn.Module):
         else:
             monitored_accumulator = epoch_multi_metrics_accumulator
 
+        accumulators = {
+            "validation_loss": Objective(
+                "validation_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None
+            ),
+            "monitored_metric": Objective(
+                self.monitored_metric,
+                monitored_accumulator.objective,
+                reduction_fn=None,
+            ),
+        }
+
         model__global_best_metric = Objective(
             name=monitored_accumulator.name,
             objective=monitored_accumulator.objective,
@@ -514,8 +535,10 @@ class AutoConstructiveModel(nn.Module):
                 monitored_accumulator.name != "validation_loss"
                 or epoch == self.num_epochs - 1
             )
+            # return_multi_metrics = True
 
             with torch.inference_mode():
+                # TODO: rodar validacao usando a negacao do train_mask na hora de calcular o loss
                 models_validation_loss, validation_multi_metrics = self.execute_loop(
                     dataloader=self.validation_dataloader,
                     loss_function=loss_function,
@@ -524,13 +547,22 @@ class AutoConstructiveModel(nn.Module):
                     not_exhausted_models=None,
                     return_multi_metrics=return_multi_metrics,
                 )  # [num_models]
-
+                accumulators["validation_loss"].accumulate_values(
+                    models_validation_loss
+                )
                 if validation_multi_metrics is not None:
-                    epoch_multi_metrics_accumulator.set_values(
-                        validation_multi_metrics.calculate_metrics()[
-                            epoch_multi_metrics_accumulator.name
-                        ]
-                    )
+                    if self.monitored_metric != "validation_loss":
+                        multi_metrics_values = (
+                            validation_multi_metrics.calculate_metrics()[
+                                epoch_multi_metrics_accumulator.name
+                            ]
+                        )
+
+                        epoch_multi_metrics_accumulator.set_values(multi_metrics_values)
+
+                accumulators["monitored_metric"].accumulate_values(
+                    monitored_accumulator.current_reduction
+                )
 
                 model__global_best_metric.reset()
                 model__global_best_metric.set_values(
@@ -584,6 +616,11 @@ class AutoConstructiveModel(nn.Module):
                             ]
                             .cpu()
                             .numpy(),
+                            "repetition": self.pmlps.output__repetition[
+                                best_improved_model_ids_numpy
+                            ]
+                            .cpu()
+                            .numpy(),
                             "epoch": epoch,
                             "model_id": best_improved_model_ids_numpy,
                             "activation_name": self.pmlps.get_activation_from_model_id(
@@ -621,7 +658,7 @@ class AutoConstructiveModel(nn.Module):
                             chosen_df = pmlps_df
 
                     grouped_pmlps = (
-                        pmlps_df.groupby(["architecture_id"])
+                        pmlps_df.groupby(["architecture_id", "repetition"])
                         .agg(["median", "std"])
                         .sort_values(by=("metrics", "median"))
                     ).reset_index()
@@ -744,6 +781,26 @@ class AutoConstructiveModel(nn.Module):
             f"Reset {self.total_local_resets} mlps to construct this layer. num_trained_mlps so far: {self.num_trained_mlps}"
         )
 
+        metric_history = (
+            torch.stack(accumulators["monitored_metric"].tensors).detach().cpu().numpy()
+        )
+        max_epoch = 0
+        early_epochs_model_ids = pmlps_df[
+            pmlps_df["epoch"] <= max_epoch
+        ].index.to_numpy()
+        # if len(early_epochs_model_ids) > 0:
+        #     early_epochs = pmlps_df[pmlps_df["epoch"] <= max_epoch]["epoch"].to_numpy()
+        #     loss_history = pd.DataFrame(
+        #         metric_history[:, early_epochs_model_ids],
+        #         columns=[
+        #             f"{model_id}_{e}"
+        #             for (model_id, e) in zip(early_epochs_model_ids, early_epochs)
+        #         ],
+        #     )
+        #     ax = loss_history.plot()
+        #     ax.figure.savefig("metric_history.pdf")
+        # # loss_history["epoch"] = early_epochs
+
         min_neurons = self.pmlps.model_id__num_hidden_neurons.min().item()
         max_neurons = self.pmlps.model_id__num_hidden_neurons.max().item()
         pmlps_df.to_csv(
@@ -752,8 +809,8 @@ class AutoConstructiveModel(nn.Module):
         )
 
         grouped_pmlps = grouped_pmlps.loc[
-            grouped_pmlps[("metrics", "median")]
-            < grouped_pmlps[("metrics", "median")].quantile(0.05),
+            grouped_pmlps[("validation_matthews_corrcoef", "median")]
+            < grouped_pmlps[("validation_matthews_corrcoef", "median")].quantile(0.05),
             :,
         ]
 
@@ -764,8 +821,8 @@ class AutoConstructiveModel(nn.Module):
         # name, value, best, worst
         mcdm_tuples = [
             # ("num_neurons", -1, min_neurons, max_neurons),
-            (("metrics", "median"), -1, -1, 0),
-            (("metrics", "std"), -1, 0, 1),
+            (("validation_matthews_corrcoef", "median"), -1, -1, 0),
+            (("validation_matthews_corrcoef", "std"), -1, 0, 1),
             (("loss", "median"), -1, 0, 1),
             (("loss", "std"), -1, 0, 1),
             # (("loss", "std"), -1, None, None),
@@ -797,7 +854,7 @@ class AutoConstructiveModel(nn.Module):
         topk = min(self.topk, pmlps_df.shape[0])
         best_arch_id = ranked_pmlps_df.iloc[:topk]["architecture_id"]
         pmlps_df = pmlps_df[pmlps_df["architecture_id"].isin(best_arch_id)].sort_values(
-            by="metrics"
+            by="validation_matthews_corrcoef"
         )
         print(pmlps_df)
 
@@ -975,7 +1032,9 @@ class AutoConstructiveModel(nn.Module):
             self.device
         )
 
-        for (x, y) in dataloader:
+        current_train_mask = None
+        for (indices, x, y) in dataloader:
+            indices = indices.to(self.device)
             x = x.to(self.device)
             y = y.to(self.device)
 
@@ -995,7 +1054,6 @@ class AutoConstructiveModel(nn.Module):
                     ).to(self.device)
                 individual_losses *= drop_samples.uniform_() > self.drop_samples
 
-            # self.regularization=True
             if self.regularization_gamma is not None:
                 regularization_term = self.pmlps.get_regularization_term(
                     gamma=self.regularization_gamma
@@ -1009,11 +1067,19 @@ class AutoConstructiveModel(nn.Module):
                 # loss = individual_losses.mean(
                 #     0
                 # ).sum()  # [batch_size, num_models] -> [num_models] -> []
-                loss = individual_losses.mean(
-                    0
-                )  # [batch_size, num_models] -> [num_models]
-                if not_exhausted_models is not None:
-                    loss = loss * not_exhausted_models
+
+                # was using this before the individual_losses.sum/current_train_mask.sum
+                # loss = individual_losses.mean(
+                #     0
+                # )  # [batch_size, num_models] -> [num_models]
+
+                # ignoring validation indices
+                current_train_mask = self.train_mask[indices, :]
+                individual_losses = individual_losses * current_train_mask
+
+                loss = individual_losses.sum(0) / current_train_mask.sum(0)
+                # if not_exhausted_models is not None:
+                #     loss = loss * not_exhausted_models
 
                 loss = loss.sum()  #  [num_models]-> []
 
@@ -1022,7 +1088,7 @@ class AutoConstructiveModel(nn.Module):
                 self.pmlps.enforce_input_perturbation()
 
             if return_multi_metrics:
-                multi_cm.update(outputs, y)
+                multi_cm.update(outputs, y, current_train_mask)
 
         if accumulator:
             with torch.inference_mode():
@@ -1260,6 +1326,20 @@ class AutoConstructiveModel(nn.Module):
 
         return num_neurons, activation_name
 
+    def _generate_model_train_mask(self, num_unique_models, y):
+        splitter = StratifiedKFold(
+            n_splits=self.repetitions, shuffle=True, random_state=self.random_state
+        )
+        train_mask = torch.zeros((y.shape[0], num_unique_models))
+
+        step = num_unique_models // self.repetitions
+        for k, (train_index, val_index) in enumerate(splitter.split(y, y)):
+            train_mask[train_index, k * step : (k + 1) * step] = 1
+
+        train_mask = train_mask.bool()
+        train_mask = train_mask.to(self.device)
+        return train_mask
+
     def fit(
         self,
         x_train: Tensor,
@@ -1269,12 +1349,36 @@ class AutoConstructiveModel(nn.Module):
         x_test: Optional[Tensor],
         y_test: Optional[Tensor],
     ):
+
         x_train, y_train = self.__adjust_data(x_train, y_train)
         x_validation, y_validation = self.__adjust_data(x_validation, y_validation)
+
+        merge_train_validation = True
+
+        if merge_train_validation:
+            x_train = torch.cat((x_train, x_validation))
+            y_train = torch.cat((y_train, y_validation))
+
         if y_test is not None:
             x_test, y_test = self.__adjust_data(x_test, y_test)
+
         nb_labels = len(y_train.unique())
         max_trivial_layers = 1
+
+        (
+            hidden_neuron__model_id,
+            output__model_id,
+            output__architecture_id,
+        ) = build_model_ids(
+            self.repetitions,
+            self.activations,
+            self.min_neurons,
+            self.max_neurons,
+            self.step_neurons,
+        )
+        self.train_mask = self._generate_model_train_mask(
+            len(np.unique(output__model_id)), y_train
+        )
 
         if self.all_data_to_device:
             x_train = x_train.to(self.device)
