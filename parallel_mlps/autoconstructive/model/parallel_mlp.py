@@ -142,9 +142,19 @@ def build_model_ids(
         # [2, 3, 2, 3] + 2
         # [] + 4
 
+    output__repetition = np.tile(
+        np.arange(repetitions).repeat(increment // repetitions),
+        num_parallel_mlps // repetitions,
+    )
+
     output__architecture_id = output__architecture_id.astype(int).tolist()
 
-    return hidden_neuron__model_id, output__model_id, output__architecture_id
+    return (
+        hidden_neuron__model_id,
+        output__model_id,
+        output__architecture_id,
+        output__repetition,
+    )
 
 
 class ParallelMLPs(nn.Module):

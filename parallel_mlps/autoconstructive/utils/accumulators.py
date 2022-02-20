@@ -18,7 +18,7 @@ class Objective:
         self,
         name: str,
         objective: ObjectiveEnum = ObjectiveEnum.MINIMIZATION,
-        reduction_fn: Callable[[Tensor], Tensor] = torch.mean,
+        reduction_fn: str = None,
         min_relative_improvement: float = 0.0,
     ) -> None:
         self.name = name
@@ -27,6 +27,7 @@ class Objective:
         self.min_relative_improvement = min_relative_improvement
 
         self.tensors = []
+        self.mask = None
         self.current_reduction = None
         self.best = None
         self._improved = False
@@ -38,10 +39,14 @@ class Objective:
         self.tensors = values
         self.apply_reduction()
 
-    def accumulate_values(self, values: Tensor):
+    def accumulate_values(self, values: Tensor, mask: Tensor):
         self.is_dirty = True
         self._improved = False
         self.tensors.append(values)
+        if self.mask is None:
+            self.mask = mask
+        else:
+            self.mask += mask
 
     def reset(self, reset_best=False):
         self.tensors = []
@@ -90,10 +95,15 @@ class Objective:
     def apply_reduction(self):
         self.is_dirty = False
 
-        if self.reduction_fn is not None:
-            self.current_reduction = self.reduction_fn(self.tensors)
-        else:
+        if self.reduction_fn is None:
             self.current_reduction = self.tensors
+        elif self.reduction_fn == "mean":
+            if self.mask is None
+                self.current_reduction = self.tensors.mean(0)
+            else:
+                self.current_reduction = self.tensors / self.mask
+        else:
+            raise RuntimeError(f"Unrecognized reduction: {self.reduction_fn}.")
 
         if self.best is None:
             self.best = self.current_reduction.clone()

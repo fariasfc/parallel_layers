@@ -23,6 +23,7 @@ logger = logging.getLogger()
 def reproducibility():
     torch.manual_seed(0)
     random.seed(0)
+    torch.use_deterministic_algorithms(True)
     # torch.set_deterministic(True)
     # torch.use_deterministic_algorithms(True)
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
@@ -46,6 +47,7 @@ def mocked_pmlps():
         hidden_neuron__model_id=[0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5],
         output__model_id=[0, 1, 2, 3, 4, 5],
         output__architecture_id=[0, 1, 2, 0, 1, 2],
+        output__repetition=[0, 0, 0, 0, 0, 0],
         drop_samples=0,
         activations=[nn.Identity(), nn.Sigmoid()],
         input_perturbation_strategy=None,
@@ -125,7 +127,12 @@ def activation_functions():
 
 @pytest.fixture
 def parallel_mlp_object(activation_functions, X):
-    hidden_neuron__model_id, outputs_ids, architecture_ids = build_model_ids(
+    (
+        hidden_neuron__model_id,
+        outputs_ids,
+        architecture_ids,
+        output__repetition,
+    ) = build_model_ids(
         repetitions=3,
         activation_functions=activation_functions,
         min_neurons=MIN_NEURONS,
@@ -140,6 +147,7 @@ def parallel_mlp_object(activation_functions, X):
         hidden_neuron__model_id=hidden_neuron__model_id,
         output__model_id=outputs_ids,
         output__architecture_id=architecture_ids,
+        output__repetition=output__repetition,
         drop_samples=None,
         input_perturbation_strategy=None,
         activations=activation_functions,
@@ -268,7 +276,12 @@ def test_build_model_ids(
     expected_activation,
     expected_num_neurons,
 ):
-    hidden_layer_ids, output_ids, architecture_ids = build_model_ids(
+    (
+        hidden_layer_ids,
+        output_ids,
+        architecture_ids,
+        output__repetition,
+    ) = build_model_ids(
         repetitions=repetitions,
         activation_functions=activation_functions,
         min_neurons=min_neurons,
@@ -284,6 +297,7 @@ def test_build_model_ids(
             hidden_neuron__model_id=hidden_layer_ids,
             output__model_id=output_ids,
             output__architecture_id=architecture_ids,
+            output__repetition=output__repetition,
             drop_samples=False,
             input_perturbation_strategy="sqrt",
             activations=activation_functions,
@@ -325,6 +339,7 @@ def test_architecture_ids(
         hidden_neuron__model_id,
         output__model_id,
         output__architecture_id,
+        output__repetition,
     ) = build_model_ids(
         repetitions,
         activations,
@@ -338,6 +353,7 @@ def test_architecture_ids(
         hidden_neuron__model_id,
         output__model_id,
         output__architecture_id,
+        output__repetition,
         None,
         None,
         activations,
@@ -422,6 +438,7 @@ def test_trainings(X, Y, parallel_mlp_object):
             assert torch.allclose(candidate_losses[i], loss, atol=atol, rtol=rtol)
 
             m = parallel_mlp_object.extract_mlps([i])[0]
+            print(i)
 
             np.testing.assert_allclose(
                 m.hidden_layer.weight.detach().cpu().numpy(),

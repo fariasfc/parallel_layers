@@ -1,7 +1,13 @@
 import os
+from tqdm import tqdm
+from torch.optim.sgd import SGD
+from torch import nn
+from torch.utils.data.dataset import TensorDataset
+from torch.utils.data.dataloader import DataLoader
 
 # from pyinstrument import Profiler
 from typing import Any, Dict
+from autoconstructive.model.parallel_mlp import ParallelMLPs, build_model_ids
 from conf.config import (
     AutoConstructiveConfig,
     resolve_activations,
@@ -186,9 +192,23 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         x_test=x_test_debug,
         y_test=y_test_debug,
     )
+
     # profiler.stop()
     # profiler.open_in_browser()
     end = perf_counter()
+    logger.info(f"auto_constructive.fit took: {end-start} ")
+
+    if False:
+        test_sequential(
+            torch.tensor(x_train),
+            torch.tensor(y_train),
+            torch.tensor(x_val),
+            torch.tensor(y_val),
+            torch.tensor(x_test),
+            torch.tensor(y_test),
+            auto_constructive,
+            cfg,
+        )
 
     wandb.run.summary.update(
         {
@@ -269,6 +289,99 @@ def log_results(logits, y, metric_prefix, ignore_wandb=False):
             wandb.run.summary.update(train_metric)
 
     return metrics
+
+
+def test_sequential(
+    x_train,
+    y_train,
+    x_validation,
+    y_validation,
+    x_test,
+    y_test,
+    autoconstructive,
+    cfg: AutoConstructiveConfig,
+):
+    if cfg.model.all_data_to_device:
+        x_train = x_train.to(cfg.model.device)
+        y_train = y_train.to(cfg.model.device)
+        x_validation = x_validation.to(cfg.model.device)
+        y_validation = y_validation.to(cfg.model.device)
+        x_test = x_test.to(cfg.model.device)
+        y_test = y_test.to(cfg.model.device)
+
+    train_dataset = TensorDataset(x_train, y_train)
+    validation_dataset = TensorDataset(x_validation, y_validation)
+    test_dataset = TensorDataset(x_test, y_test)
+    train_dataloader = DataLoader(train_dataset, batch_size=cfg.training.batch_size)
+    validation_dataloader = DataLoader(
+        validation_dataset, batch_size=cfg.training.batch_size
+    )
+    test_dataloader = DataLoader(test_dataset, batch_size=cfg.training.batch_size)
+
+    (
+        hidden_neuron__model_id,
+        output__model_id,
+        output__architecture_id,
+        output__repetition,
+    ) = build_model_ids(
+        cfg.model.repetitions,
+        resolve_activations(cfg.model.activations),
+        cfg.model.min_neurons,
+        cfg.model.max_neurons,
+        cfg.model.step_neurons,
+    )
+
+    in_features = train_dataloader.dataset[0][0].shape[0]
+    out_features = len(train_dataloader.dataset.tensors[-1].unique())
+
+    pmlps = ParallelMLPs(
+        in_features,
+        out_features,
+        hidden_neuron__model_id,
+        output__model_id,
+        output__architecture_id,
+        output__repetition,
+        None,
+        None,
+        resolve_activations(cfg.model.activations),
+    )
+
+    start = perf_counter()
+    num_models = pmlps.num_unique_models
+    i = 0
+    for model_id in tqdm(range(num_models)):
+        i += 1
+        num_hidden = pmlps.model_id__num_hidden_neurons[model_id]
+        activation = pmlps.get_activation_from_model_id(model_id)
+        model = nn.Sequential(
+            nn.Linear(in_features, num_hidden),
+            activation,
+            nn.Linear(num_hidden, out_features),
+        )
+        model = model.to(cfg.model.device)
+        optimizer = SGD(params=model.parameters(), lr=cfg.model.learning_rate)
+        loss_function = nn.CrossEntropyLoss()
+
+        for epoch in range(cfg.training.num_epochs):
+            model.train()
+            for (x, y) in train_dataloader:
+                optimizer.zero_grad()
+                p = model(x)
+                l = loss_function(p, y)
+                l.backward()
+                optimizer.step()
+
+            model.eval()
+            with torch.no_grad():
+                for (x, y) in validation_dataloader:
+                    p = model(x)
+                    loss_function(p, y)
+
+                for (x, y) in test_dataloader:
+                    p = model(x)
+                    loss_function(p, y)
+    end = perf_counter()
+    logger.info(f"Sequential took: {end-start} to train {i} models")
 
 
 if __name__ == "__main__":

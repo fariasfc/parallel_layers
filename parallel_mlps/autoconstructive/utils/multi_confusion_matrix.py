@@ -30,6 +30,7 @@ class MultiConfusionMatrix:
         )
         self.one = torch.tensor([1], device=device, dtype=torch.int)
         self.device = device
+        self._is_dirty = True
 
     def update(self, predictions: Tensor, targets: Tensor, mask: Tensor = None) -> None:
         """Updates the Confuson Matrix
@@ -39,6 +40,7 @@ class MultiConfusionMatrix:
                 targets (Tensor): [batch_size]
                 mask (Tensor): [batch_size, n_models]
         """
+        self._is_dirty = True
         with torch.inference_mode():
             if predictions.ndim > 2:
                 predictions = predictions.argmax(-1)
@@ -74,21 +76,27 @@ class MultiConfusionMatrix:
             #     accumulate=True,
             # )
 
+    @property
     def calculate_metrics(self):
-        metrics = {}
-        self.total_samples = self.cm[0].sum()
+        if self._is_dirty:
+            metrics = {}
+            self.total_samples = self.cm.sum(-1).sum(-1)[:, None]
 
-        self.tp = self.cm.diagonal(dim1=-1, dim2=-2)
-        self.fn = self.cm.sum(-1) - self.tp
-        self.fp = self.cm.sum(-2) - self.tp
-        self.tn = self.total_samples - self.fn - self.fp - self.tp
-        metrics["overall_acc"] = self.tp.sum(-1) / self.total_samples
-        metrics["matthews_corrcoef"] = self._matthews_corrcoef()
+            self.tp = self.cm.diagonal(dim1=-1, dim2=-2)
+            self.fn = self.cm.sum(-1) - self.tp
+            self.fp = self.cm.sum(-2) - self.tp
+            self.tn = self.total_samples - self.fn - self.fp - self.tp
 
-        return metrics
+            self.total_samples = self.total_samples.squeeze()
+            metrics["overall_acc"] = self.tp.sum(-1) / self.total_samples
+            metrics["matthews_corrcoef"] = self._matthews_corrcoef()
+            self._is_dirty = False
+            self._calculate_metrics = metrics
+
+        return self._calculate_metrics
 
     def to_dataframe(self, prefix=None):
-        df = pd.DataFrame(self.calculate_metrics())
+        df = pd.DataFrame(self.calculate_metrics)
         if prefix is not None:
             df.columns = [f"{prefix}{c}" for c in df.columns]
         if self.model_ids is not None:

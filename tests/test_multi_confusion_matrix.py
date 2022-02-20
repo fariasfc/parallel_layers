@@ -238,3 +238,54 @@ def test_multicm_masks():
     )
     # fmt: on
     assert torch.all(multi_cm.cm == expected_cm)
+
+
+def test_masks():
+    batch_size = 8
+    n_classes = 3
+    n_models = 5
+
+    preds1 = torch.randn((batch_size, n_models, n_classes)).argmax(-1)
+    preds2 = torch.randn((batch_size, n_models, n_classes)).argmax(-1)
+    y1 = torch.randint(0, n_classes, (batch_size,))
+    y2 = torch.randint(0, n_classes, (batch_size,))
+    mask1 = torch.randint(0, 2, (batch_size, n_models)).bool()
+    mask2 = torch.randint(0, 2, (batch_size, n_models)).bool()
+
+    multi_cm = MultiConfusionMatrix(n_models, n_classes)
+    multi_cm.update(preds1, y1, mask1)
+    multi_cm.update(preds2, y2, mask2)
+
+    multi_cm_metrics = multi_cm.calculate_metrics()
+    preds = torch.cat((preds1, preds2))
+    y = torch.cat((y1, y2))
+    mask = torch.cat((mask1, mask2))
+
+    for model_id in range(n_models):
+        current_mask = mask[:, model_id]
+        current_y = y[current_mask].numpy()
+        current_pred = preds[current_mask, model_id].numpy()
+        cm = ConfusionMatrix(current_y, current_pred)
+
+        np.testing.assert_equal(cm.to_array(), multi_cm.cm[model_id].numpy())
+
+        np.testing.assert_equal(
+            np.array([cm.TP[k] for k in range(n_classes)]),
+            multi_cm.tp[model_id].numpy(),
+        )
+        np.testing.assert_equal(
+            np.array([cm.FP[k] for k in range(n_classes)]),
+            multi_cm.fp[model_id].numpy(),
+        )
+        np.testing.assert_equal(
+            np.array([cm.TN[k] for k in range(n_classes)]),
+            multi_cm.tn[model_id].numpy(),
+        )
+        np.testing.assert_equal(
+            np.array([cm.FN[k] for k in range(n_classes)]),
+            multi_cm.fn[model_id].numpy(),
+        )
+
+        cm.print_matrix()
+        print(multi_cm.cm[model_id])
+        print("-" * 20)
