@@ -1,0 +1,79 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Python: Current File",
+			"type": "python",
+			"request": "launch",
+			"program": "${file}",
+			"console": "integratedTerminal"
+		},
+		{
+			"name": "Main Debug",
+			"type": "python",
+			"envFile": "${workspaceFolder}/.env",
+			"request": "launch",
+			"program": "${workspaceFolderBasename}/main.py",
+			"env": {
+				"WANDB_MODE": "disabled"
+			},
+			"args": [
+				"training.data_home=/home/fcf/projects/parallel_mlps/datasets/",
+				"training.dataset=diabetes",
+				// "training.find_num_neurons_first=True",
+				// "training.distance_name=null",
+				"training.experiment_num=2",
+				"training.batch_size=32",
+				"model.max_layers=1",
+				/////////
+				"training.debug_test=True",
+				// "training.num_epochs=5",
+				// "model.max_neurons=3",
+				// "model.repetitions=2",
+				// "model.activations=[identity, relu, sigmoid]",
+				/////////
+				"model.topk=1",
+				// "model.stack_hidden_layers=True",
+				// "model.all_data_to_device=False",
+				// "model.output_confidence=True",
+				// "model.min_confidence=0.5",
+			],
+			"console": "integratedTerminal"
+		},
+		{
+			"name": "Main",
+			"type": "python",
+			"envFile": "${workspaceFolder}/.env",
+			"request": "launch",
+			"program": "${workspaceFolderBasename}/main.py",
+			"justMyCode": false,
+			"args": [
+				"training.data_home=/home/fcf/projects/parallel_mlps/datasets/",
+				"training.dataset=diabetes",
+				"model.all_data_to_device=true",
+				"training.debug_test=True",
+				// "training.find_num_neurons_first=True",
+				// "model.transform_data_strategy=none",
+				// "training.monitored_metric=overall_acc",
+				"model.stack_hidden_layers=True",
+				"training.reset_exhausted_models=False",
+				// "training.distance_name=null",
+				// "training.experiment_num=2",
+				"model.max_layers=1",
+				// "training.num_epochs=5",
+				// "model.min_neurons=1",
+				// "model.max_neurons=3",
+				"model.repetitions=10",
+				"model.activations=[identity, relu, selu]",
+				// "model.device=cpu",
+				"model.topk=1",
+				// "model.output_confidence=True",
+				// "model.min_confidence=0.5",
+			],
+			"console": "integratedTerminal"
+		}
+	]
+}
