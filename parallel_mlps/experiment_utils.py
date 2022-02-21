@@ -8,6 +8,7 @@ def assess_model(logits, y_labels, metric_prefix):
         logits = {"": logits}
 
     y = sklearn.preprocessing.OneHotEncoder().fit_transform(y_labels[:, None]).todense()
+    y = np.asarray(y)
 
     metrics_list = []
     for model, tmp_logits in logits.items():

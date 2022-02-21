@@ -127,6 +127,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         input_perturbation=cfg.training.input_perturbation_strategy,
         regularization_gamma=cfg.training.regularization_gamma,
         monitored_metric=cfg.training.monitored_metric,
+        monitored_objective=cfg.training.monitored_objective,
         find_num_neurons_first=cfg.training.find_num_neurons_first,
         mcdm_weights=cfg.training.mcdm_weights,
         num_workers=cfg.model.num_workers,

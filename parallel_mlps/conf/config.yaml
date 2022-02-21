@@ -16,7 +16,7 @@ training:
     input_perturbation_strategy: null #sqrt #random_sparsity0.1 #sqrt
     regularization_gamma: 1e-4
     monitored_metric: "overall_acc" #"matthews_corrcoef" #"overall_acc" #"validation_loss" #
-    monitored_objective: "maximization"
+    monitored_objective: "MAXIMIZATION"
 
     find_num_neurons_first: False
     #num_neurons, metric

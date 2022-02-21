@@ -7,10 +7,7 @@ from enum import Enum
 
 from autoconstructive.utils import helpers
 
-
-class ObjectiveEnum(Enum):
-    MAXIMIZATION = "maximization"
-    MINIMIZATION = "minimization"
+from autoconstructive.autoconstructive_enums import ObjectiveEnum
 
 
 class Objective:
@@ -27,29 +24,32 @@ class Objective:
         self.min_relative_improvement = min_relative_improvement
 
         self.tensors = []
-        self.mask = None
+        self.masks = []
         self.current_reduction = None
         self.best = None
         self._improved = False
         self.is_dirty = True
 
-    def set_values(self, values: Tensor):
+    def set_values(self, values: Tensor, masks: Tensor = None):
         self.is_dirty = True
         self._improved = False
-        self.tensors = values
+        self.tensors = [values]
+        if masks is not None:
+            masks = [masks]
+
+        self.masks = masks
         self.apply_reduction()
 
-    def accumulate_values(self, values: Tensor, mask: Tensor):
+    def accumulate_values(self, values: Tensor, mask: Tensor = None):
         self.is_dirty = True
         self._improved = False
         self.tensors.append(values)
-        if self.mask is None:
-            self.mask = mask
-        else:
-            self.mask += mask
+        if mask is not None:
+            self.masks.append(mask)
 
     def reset(self, reset_best=False):
         self.tensors = []
+        self.masks = []
         self.current_reduction = None
         if reset_best:
             self.best = None
@@ -95,13 +95,18 @@ class Objective:
     def apply_reduction(self):
         self.is_dirty = False
 
+        tensors = torch.cat(self.tensors)
+        masks = None
+        if self.masks is not None and len(self.masks) > 0:
+            masks = torch.cat(self.masks)
+
         if self.reduction_fn is None:
-            self.current_reduction = self.tensors
+            self.current_reduction = tensors
         elif self.reduction_fn == "mean":
-            if self.mask is None
-                self.current_reduction = self.tensors.mean(0)
+            if masks is None:
+                self.current_reduction = tensors.mean(0)
             else:
-                self.current_reduction = self.tensors / self.mask
+                self.current_reduction = tensors.sum(0) / masks.sum(0)
         else:
             raise RuntimeError(f"Unrecognized reduction: {self.reduction_fn}.")
 

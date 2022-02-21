@@ -1,7 +1,7 @@
 from dataclasses import dataclass
+from autoconstructive.utils.accumulators import ObjectiveEnum
 from torch import optim
 from typing import List, Optional
-import hydra
 from hydra.core.config_store import ConfigStore
 from torch import nn
 from torch.nn.modules import loss
@@ -28,6 +28,7 @@ class TrainingConfig:
     input_perturbation_strategy: Optional[str]
     regularization_gamma: Optional[float]
     monitored_metric: str
+    monitored_objective: ObjectiveEnum
     find_num_neurons_first: bool
     mcdm_weights: Optional[List[float]]
 

@@ -135,7 +135,7 @@ def build_model_ids(
     increment = max(repetition_architecture_id) + 1
     for act in range(num_activations):
         output__architecture_id = np.hstack(
-            (output__architecture_id, repetition_architecture_id)
+            (output__architecture_id, repetition_architecture_id.copy())
         )
         repetition_architecture_id += increment
         # [0, 1, 0, 1]
@@ -143,11 +143,14 @@ def build_model_ids(
         # [] + 4
 
     output__repetition = np.tile(
-        np.arange(repetitions).repeat(increment // repetitions),
-        num_parallel_mlps // repetitions,
+        np.arange(repetitions).repeat(num_different_neurons_structures),
+        num_activations,
     )
 
     output__architecture_id = output__architecture_id.astype(int).tolist()
+
+    assert len(output__architecture_id) == len(output__model_id)
+    assert len(output__architecture_id) == len(output__repetition)
 
     return (
         hidden_neuron__model_id,
@@ -482,7 +485,7 @@ class ParallelMLPs(nn.Module):
 
     def get_activation_from_model_id(self, model_ids):
         activations = []
-        if isinstance(model_ids, int):
+        if isinstance(model_ids, (int, np.int64)):
             model_ids = [model_ids]
 
         for model_id in model_ids:
