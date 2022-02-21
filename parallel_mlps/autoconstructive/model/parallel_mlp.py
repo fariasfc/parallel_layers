@@ -101,11 +101,17 @@ def build_model_ids(
     if len(set(activation_names)) != len(activation_names):
         raise ValueError("activation_functions must have only unique values.")
 
-    num_activations = len(activation_functions)
-
     neurons_structure = torch.arange(min_neurons, max_neurons + 1, step).tolist()
+
+    num_activations = len(activation_functions)
     num_different_neurons_structures = len(neurons_structure)
     num_parallel_mlps = num_different_neurons_structures * num_activations * repetitions
+
+    output__activation = (
+        torch.arange(num_activations)
+        .repeat_interleave(num_parallel_mlps // num_activations)
+        .long()
+    )
 
     i = 0
     hidden_neuron__model_id = []
@@ -117,46 +123,51 @@ def build_model_ids(
     total_hidden_neurons = len(hidden_neuron__model_id)
     activations_split = total_hidden_neurons // num_activations
 
-    output__model_id = [i[0] for i in groupby(hidden_neuron__model_id)]
+    output__model_id = torch.Tensor(
+        [i[0] for i in groupby(hidden_neuron__model_id)]
+    ).long()
     output__neuron_structure_id = (
         output__model_id[: num_activations * num_different_neurons_structures]
         * repetitions
     )
 
-    repetition_architecture_id = np.tile(
-        np.arange(num_different_neurons_structures), repetitions
+    repetition_architecture_id = (
+        torch.arange(num_different_neurons_structures).repeat(repetitions).long()
     )
     # # model_ids = np.arange(num_different_neurons_structures)
     # repetition_architecture_id = np.array([])
     # for rep in range(repetitions):
     #     repetition_architecture_id = np.hstack((repetition_architecture_id, model_ids))
 
-    output__architecture_id = np.array([])
+    output__architecture_id = torch.tensor([])
     increment = max(repetition_architecture_id) + 1
     for act in range(num_activations):
-        output__architecture_id = np.hstack(
-            (output__architecture_id, repetition_architecture_id.copy())
+        output__architecture_id = torch.hstack(
+            (output__architecture_id, repetition_architecture_id.clone())
         )
         repetition_architecture_id += increment
         # [0, 1, 0, 1]
         # [2, 3, 2, 3] + 2
         # [] + 4
 
-    output__repetition = np.tile(
-        np.arange(repetitions).repeat(num_different_neurons_structures),
-        num_activations,
-    )
+    output__repetition = (
+        torch.arange(repetitions)
+        .repeat_interleave(num_different_neurons_structures)
+        .repeat(num_activations)
+    ).long()
 
-    output__architecture_id = output__architecture_id.astype(int).tolist()
+    output__architecture_id = output__architecture_id.long()
 
     assert len(output__architecture_id) == len(output__model_id)
     assert len(output__architecture_id) == len(output__repetition)
+    assert len(output__architecture_id) == len(output__activation)
 
     return (
         hidden_neuron__model_id,
         output__model_id,
         output__architecture_id,
         output__repetition,
+        output__activation,
     )
 
 
@@ -190,14 +201,12 @@ class ParallelMLPs(nn.Module):
         self.hidden_neuron__model_id = (
             torch.Tensor(hidden_neuron__model_id).long().to(self.device)
         )
-        self.output__model_id = torch.Tensor(output__model_id).long().to(self.device)
-        self.output__architecture_id = (
-            torch.Tensor(output__architecture_id).long().to(self.device)
-        )
-
-        self.output__repetition = (
-            torch.Tensor(output__repetition).long().to(self.device)
-        )
+        self.output__model_id = output__model_id.to(self.device)
+        self.output__architecture_id = output__architecture_id.to(self.device)
+        self.output__repetition = output__repetition.to(self.device)
+        # self.output__repetition = (
+        #     torch.Tensor(output__repetition.float()uuuuuuuu).long().to(self.device)
+        # )
 
         self.total_hidden_neurons = len(self.hidden_neuron__model_id)
         self.unique_model_ids = sorted(list(set(hidden_neuron__model_id)))

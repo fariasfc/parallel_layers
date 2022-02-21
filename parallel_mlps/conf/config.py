@@ -1,11 +1,13 @@
 from dataclasses import dataclass
-from autoconstructive.utils.accumulators import ObjectiveEnum
 from torch import optim
 from typing import List, Optional
+import hydra
 from hydra.core.config_store import ConfigStore
 from torch import nn
 from torch.nn.modules import loss
 from torch.optim.optimizer import Optimizer
+
+from autoconstructive.autoconstructive_enums import ObjectiveEnum
 
 
 @dataclass
@@ -29,6 +31,7 @@ class TrainingConfig:
     regularization_gamma: Optional[float]
     monitored_metric: str
     monitored_objective: ObjectiveEnum
+    pareto_frontier: bool
     find_num_neurons_first: bool
     mcdm_weights: Optional[List[float]]
 

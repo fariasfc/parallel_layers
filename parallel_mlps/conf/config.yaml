@@ -17,6 +17,7 @@ training:
     regularization_gamma: 1e-4
     monitored_metric: "overall_acc" #"matthews_corrcoef" #"overall_acc" #"validation_loss" #
     monitored_objective: "MAXIMIZATION"
+    pareto_frontier: true
 
     find_num_neurons_first: False
     #num_neurons, metric

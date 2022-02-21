@@ -165,6 +165,7 @@ class AutoConstructiveModel(nn.Module):
         regularization_gamma: Optional[float],
         monitored_metric: str,
         monitored_objective: ObjectiveEnum,
+        pareto_frontier: bool,
         find_num_neurons_first: bool,
         mcdm_weights: Optional[List[float]],
         num_workers: int,
@@ -205,6 +206,7 @@ class AutoConstructiveModel(nn.Module):
         self.regularization_gamma = regularization_gamma
         self.monitored_metric = monitored_metric
         self.monitored_objective = monitored_objective
+        self.pareto_frontier = pareto_frontier
         self.find_num_neurons_first = find_num_neurons_first
         self.mcdm_weights = mcdm_weights
         self.num_workers = num_workers
@@ -244,6 +246,7 @@ class AutoConstructiveModel(nn.Module):
             self.output__model_id,
             self.output__architecture_id,
             self.output__repetition,
+            self.output__activation,
         ) = build_model_ids(
             self.repetitions,
             self.activations,
@@ -313,7 +316,7 @@ class AutoConstructiveModel(nn.Module):
                     #             results[k] = []
                     #         # results.append(r[0]["__overall_acc"])
                     #         results[k].append(r[k])
-                    results = multi_cm.calculate_metrics
+                    results = multi_cm.calculated_metrics
                 return results
 
             # results = {}
@@ -507,8 +510,8 @@ class AutoConstructiveModel(nn.Module):
         self.total_local_resets = 0
 
         best_mlps = []
-        pareto_mlps = {}
-        metrics_min = None
+        mpls = {}
+        metrics_max = None
 
         t = tqdm(range(self.num_epochs))
         pmlps_df = pd.DataFrame()
@@ -567,7 +570,7 @@ class AutoConstructiveModel(nn.Module):
 
                 if validation_multi_metrics is not None:
                     accumulators["monitored_metric"].set_values(
-                        validation_multi_metrics.calculate_metrics[
+                        validation_multi_metrics.calculated_metrics[
                             self.monitored_metric
                         ]
                     )
@@ -612,6 +615,14 @@ class AutoConstructiveModel(nn.Module):
                     epoch_bests_df = pd.DataFrame(
                         {
                             "selected": False,
+                            "fold": self.output__kfold[best_improved_model_ids]
+                            .cpu()
+                            .numpy(),
+                            "repetition": self.output__repetition[
+                                best_improved_model_ids
+                            ]
+                            .cpu()
+                            .numpy(),
                             "num_neurons": self.pmlps.model_id__num_hidden_neurons[
                                 best_improved_model_ids
                             ]
@@ -677,7 +688,7 @@ class AutoConstructiveModel(nn.Module):
                     )
 
                     for model_id in to_add_or_update_pareto_mlps:
-                        pareto_mlps[model_id] = to_add_or_update_pareto_mlps[model_id]
+                        mpls[model_id] = to_add_or_update_pareto_mlps[model_id]
 
                     # pmlps_df.loc[:, "dominant_solution"] = False
                     # pmlps_df.loc[epoch_bests_df.index, "dominant_solution"] = True
@@ -834,10 +845,11 @@ class AutoConstructiveModel(nn.Module):
             .agg(["median", "std"])
             .sort_values(
                 by=[
-                    ("validation_overall_acc", "median"),
-                    ("validation_overall_acc", "std"),
+                    ("monitored_metric", "median"),
+                    ("monitored_metric", "std"),
+                    ("num_neurons", "median"),
                 ],
-                ascending=[False, True],
+                ascending=[False, True, True],
             )
         ).reset_index()
 
@@ -873,11 +885,11 @@ class AutoConstructiveModel(nn.Module):
 
         # name, value, best, worst
         mcdm_tuples = [
-            # ("num_neurons", -1, min_neurons, max_neurons),
-            (("validation_matthews_corrcoef", "median"), -1, -1, 0),
-            (("validation_matthews_corrcoef", "std"), -1, 0, 1),
-            (("loss", "median"), -1, 0, 1),
-            (("loss", "std"), -1, 0, 1),
+            (("num_neurons", "median"), -1, self.min_neurons, self.max_neurons),
+            (("monitored_metric", "median"), 1, 0, 1),
+            (("monitored_metric", "std"), -1, 0, 1),
+            # (("loss", "median"), -1, 0, 1),
+            # (("loss", "std"), -1, 0, 1),
             # (("loss", "std"), -1, None, None),
         ]
         # best_arch_id = (
@@ -888,6 +900,10 @@ class AutoConstructiveModel(nn.Module):
 
         # pmlps_df = pmlps_df.loc[pmlps_df["architecture_id"] == best_arch_id]
 
+        if self.pareto_frontier:
+            ranked_pmlps_df = pareto_grouped_pmlps
+        else:
+            ranked_pmlps_df = grouped_pmlps
         # TODO: uncomment
         # ranked_pmlps_df = self.get_ranked_pmlps_df(
         #     grouped_pmlps,
@@ -898,29 +914,69 @@ class AutoConstructiveModel(nn.Module):
         #     theoretical_worst=None,
         #     only_pareto_solutions=True,
         # )
-        ranked_pmlps_df = grouped_pmlps
+        # ranked_pmlps_df.to_csv(
+        #     f"ranked_pmlps_{self.current_layer_index}.csv",
+        #     float_format="{:f}".format,
+        # )
+
+        # all_ranked_pmlps_df = self.get_ranked_pmlps_df(
+        #     grouped_pmlps,
+        #     mcdm_tuples,
+        #     # theoretical_best=theoretical_best,
+        #     # theoretical_worst=theoretical_worst,
+        #     theoretical_best=None,
+        #     theoretical_worst=None,
+        #     only_pareto_solutions=False,
+        # )
+        # all_ranked_pmlps_df.to_csv(
+        #     f"all_ranked_pmlps_{self.current_layer_index}.csv",
+        #     float_format="{:f}".format,
+        # )
 
         # TODO:change here to use rank
         # pmlps_df = pmlps_df.sort_values(
         #     by=["metrics"], ascending=True
         # ).reset_index()
 
+        #
+        most_difficult_repetition_df = (
+            pmlps_df.groupby(["repetition"])
+            .agg(["median", "std"])
+            .sort_values(
+                by=[("monitored_metric", "median"), ("monitored_metric", "std")],
+                ascending=["True", "True"],
+            )
+            .reset_index()
+        )
+        most_difficult_repetition = most_difficult_repetition_df.iloc[0][
+            "repetition"
+        ].item()
+        print(f"Most difficult repetition df:{most_difficult_repetition_df}")
+        print(f"Most difficult repetition (kfold): {most_difficult_repetition}")
+
         topk = min(self.topk, pmlps_df.shape[0])
         best_arch_id = ranked_pmlps_df.iloc[:topk]["architecture_id"]
+        print(f"Best architecture id: {best_arch_id}")
+
         pmlps_df = pmlps_df[pmlps_df["architecture_id"].isin(best_arch_id)].sort_values(
             # by="validation_matthews_corrcoef", ascending=False
-            by="loss",
-            ascending=True,
+            by="monitored_metric",
+            ascending=False,
         )
+
         print(pmlps_df)
+
+        # pmlps_df = pmlps_df[pmlps_df["repetition"] == most_difficult_repetition]
 
         chosen_df = pmlps_df.iloc[:topk, :].reset_index()
         chosen_model_ids = chosen_df["model_id"].tolist()
         # best_mlps = [e[1] for e in pareto_mlps if e[0] in chosen_model_ids]
-        best_mlps = [pareto_mlps[model_id] for model_id in chosen_model_ids]
+        best_mlps = [mpls[model_id] for model_id in chosen_model_ids]
 
-        metrics_min = torch.tensor(chosen_df["monitored_metric"].min())
+        metrics_max = torch.tensor(chosen_df["monitored_metric"].max())
 
+        print("Chosen df:")
+        print(chosen_df)
         # Testing
         # if self.test_dataloader:
         #     validation_results = self.assess_mlps(
@@ -933,7 +989,7 @@ class AutoConstructiveModel(nn.Module):
 
         return (
             best_mlps,
-            metrics_min,
+            metrics_max,
             chosen_df,
         )
 
@@ -1404,15 +1460,20 @@ class AutoConstructiveModel(nn.Module):
         splitter = StratifiedKFold(
             n_splits=self.repetitions, shuffle=True, random_state=self.random_state
         )
-        train_mask = torch.zeros((y.shape[0], num_unique_models))
+        train_mask = torch.zeros((y.shape[0], num_unique_models)).bool()
+        folds = torch.zeros(num_unique_models).int()
 
         step = num_unique_models // self.repetitions
         for k, (train_index, val_index) in enumerate(splitter.split(y, y)):
-            train_mask[train_index, k * step : (k + 1) * step] = 1
+            train_index = torch.tensor(train_index).long()
+            mask = self.output__repetition == k
+            model_index = torch.where(mask)[0].unsqueeze(1)
+            train_mask[train_index, model_index] = True
+            folds[mask] = k
 
         train_mask = train_mask.bool()
         train_mask = train_mask.to(self.device)
-        return train_mask
+        return train_mask, folds
 
     def fit(
         self,
@@ -1442,6 +1503,7 @@ class AutoConstructiveModel(nn.Module):
             output__model_id,
             output__architecture_id,
             output__repetition,
+            output__activation,
         ) = build_model_ids(
             self.repetitions,
             self.activations,
@@ -1449,7 +1511,7 @@ class AutoConstructiveModel(nn.Module):
             self.max_neurons,
             self.step_neurons,
         )
-        self.train_mask = self._generate_model_train_mask(
+        self.train_mask, self.output__kfold = self._generate_model_train_mask(
             len(np.unique(output__model_id)), y_train
         )
 
@@ -1537,6 +1599,7 @@ class AutoConstructiveModel(nn.Module):
                 output__model_id,
                 output__architecture_id,
                 output__repetition,
+                output__activation,
             ) = build_model_ids(
                 repetitions,
                 activations,

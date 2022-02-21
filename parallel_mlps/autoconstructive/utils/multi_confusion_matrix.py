@@ -77,7 +77,7 @@ class MultiConfusionMatrix:
             # )
 
     @property
-    def calculate_metrics(self):
+    def calculated_metrics(self):
         if self._is_dirty:
             metrics = {}
             self.total_samples = self.cm.sum(-1).sum(-1)[:, None]
@@ -96,7 +96,7 @@ class MultiConfusionMatrix:
         return self._calculate_metrics
 
     def to_dataframe(self, prefix=None):
-        df = pd.DataFrame(self.calculate_metrics)
+        df = pd.DataFrame(self.calculated_metrics)
         if prefix is not None:
             df.columns = [f"{prefix}{c}" for c in df.columns]
         if self.model_ids is not None:
