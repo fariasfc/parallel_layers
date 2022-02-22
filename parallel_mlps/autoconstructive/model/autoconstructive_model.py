@@ -173,6 +173,7 @@ class AutoConstructiveModel(nn.Module):
         repetitions_for_best_neuron: int,
         activations: List[str],
         topk: Optional[int],
+        topk_architecture: Optional[int],
         output_confidence: bool,
         min_confidence: float,
         min_neurons: int,
@@ -215,6 +216,7 @@ class AutoConstructiveModel(nn.Module):
         self.activations = activations
         self.cross_validation = True
         self.topk = topk
+        self.topk_architecture = topk_architecture
         self.output_confidence = output_confidence
         self.min_confidence = min_confidence
         self.min_neurons = min_neurons
@@ -498,12 +500,13 @@ class AutoConstructiveModel(nn.Module):
             self.train()
 
             # accumulators["train_loss"].reset(reset_best=False)
-            models_train_loss, _ = self.execute_loop(
+            models_train_loss, train_multi_metrics = self.execute_loop(
                 self.train_dataloader,
                 loss_function,
                 optimizer,
                 not_exhausted_models=not_exhausted_models,
                 phase="train",
+                return_multi_metrics=True,
             )  # [num_models]
             # models_train_loss.apply_reduction()
             # accumulators["train_loss"].set_values(models_train_loss.current_reduction)
@@ -572,12 +575,12 @@ class AutoConstructiveModel(nn.Module):
                     )
 
                 if len(best_improved_model_ids) > 0:
+                    train_multi_metrics_df = train_multi_metrics.to_dataframe(
+                        prefix="train_"
+                    ).loc[best_improved_model_ids_numpy]
                     validation_multi_metrics_df = validation_multi_metrics.to_dataframe(
                         prefix="validation_"
-                    )
-                    validation_multi_metrics_df = validation_multi_metrics_df.loc[
-                        best_improved_model_ids_numpy
-                    ]
+                    ).loc[best_improved_model_ids_numpy]
 
                     epoch_bests_df = pd.DataFrame(
                         {
@@ -622,6 +625,9 @@ class AutoConstructiveModel(nn.Module):
                         },
                     ).set_index("model_id")
                     epoch_bests_df = pd.merge(
+                        epoch_bests_df, train_multi_metrics_df, on=["model_id"]
+                    )
+                    epoch_bests_df = pd.merge(
                         epoch_bests_df, validation_multi_metrics_df, on=["model_id"]
                     )
 
@@ -664,7 +670,8 @@ class AutoConstructiveModel(nn.Module):
             self.current_patience[accumulators["monitored_metric"].improved] = 0
 
             if self.reset_exhausted_models:
-                self._reset_exhausted_models(accumulators["monitored_metric"])
+                with torch.inference_mode():
+                    self._reset_exhausted_models(accumulators["monitored_metric"])
 
             t.set_postfix(
                 perc_not_exhausted_models=num_not_exhausted_models
@@ -709,18 +716,32 @@ class AutoConstructiveModel(nn.Module):
             f"Reset {self.total_local_resets} mlps to construct this layer. num_trained_mlps so far: {self.num_trained_mlps}"
         )
 
+        agg = "mean"
+
         grouped_pmlps = (
             pmlps_df.groupby(["architecture_id"])
-            .agg(["median", "std"])
+            .agg([agg, "std"])
             .sort_values(
                 by=[
-                    ("monitored_metric", "median"),
+                    ("monitored_metric", agg),
                     ("monitored_metric", "std"),
-                    ("num_neurons", "median"),
+                    ("num_neurons", agg),
                 ],
                 ascending=[False, True, True],
             )
         ).reset_index()
+
+        # pareto_variables = pmlps_df[
+        #     [
+        #         "num_neurons",
+        #         "monitored_metric",
+        #         "monitored_metric",
+        #     ]
+        # ].to_numpy()
+        # pareto_variables *= np.array(
+        #     [1, -1, 1]
+        # )  # is_pareto_efficient works with minimization problems.
+        # pmlps_df["dominant_solution"] = helpers.is_pareto_efficient(pareto_variables)
 
         pmlps_df.to_csv(
             f"pmlps_{self.current_layer_index}.csv",
@@ -729,8 +750,8 @@ class AutoConstructiveModel(nn.Module):
 
         # name, value, best, worst
         mcdm_tuples = [
-            (("num_neurons", "median"), -1, self.min_neurons, self.max_neurons),
-            (("monitored_metric", "median"), 1, 0, 1),
+            (("num_neurons", agg), -1, self.min_neurons, self.max_neurons),
+            (("monitored_metric", agg), 1, 0, 1),
             (("monitored_metric", "std"), -1, 0, 1),
             # (("loss", "median"), -1, 0, 1),
             # (("loss", "std"), -1, 0, 1),
@@ -743,29 +764,36 @@ class AutoConstructiveModel(nn.Module):
         # )
 
         # pmlps_df = pmlps_df.loc[pmlps_df["architecture_id"] == best_arch_id]
+        pareto_variables_list = [
+            ("num_neurons", agg),
+            ("monitored_metric", agg),
+            ("monitored_metric", "std"),
+            ("validation_matthews_corrcoef", agg),
+            ("validation_matthews_corrcoef", "std"),
+            ("loss", agg),
+            ("loss", "std"),
+        ]
+        pareto_variables = grouped_pmlps[pareto_variables_list].to_numpy()
+        pareto_variables *= np.array(
+            [1, -1, 1, -1, 1, 1, 1]
+        )  # is_pareto_efficient works with minimization problems.
+        grouped_pmlps["dominant_solution"] = helpers.is_pareto_efficient(
+            pareto_variables
+        )
+
+        pareto_grouped_pmlps = grouped_pmlps[grouped_pmlps["dominant_solution"]]
+        pareto_grouped_pmlps.to_csv(
+            f"pareto_grouped_pmlps_{self.current_layer_index}.csv",
+            float_format="{:f}".format,
+        )
 
         if self.pareto_frontier:
-            pareto_variables = grouped_pmlps[
-                [
-                    ("num_neurons", "median"),
-                    ("monitored_metric", "median"),
-                    ("monitored_metric", "std"),
-                ]
-            ].to_numpy()
-            pareto_variables *= np.array(
-                [1, -1, 1]
-            )  # is_pareto_efficient works with minimization problems.
-            grouped_pmlps["dominant_solution"] = helpers.is_pareto_efficient(
-                pareto_variables
-            )
-
-            pareto_grouped_pmlps = grouped_pmlps[grouped_pmlps["dominant_solution"]]
-            pareto_grouped_pmlps.to_csv(
-                f"pareto_grouped_pmlps_{self.current_layer_index}.csv",
-                float_format="{:f}".format,
-            )
+            print("pareto_grouped_pmlps:")
+            print(pareto_grouped_pmlps)
             ranked_pmlps_df = pareto_grouped_pmlps
         else:
+            print("grouped_pmlps:")
+            print(grouped_pmlps)
             ranked_pmlps_df = grouped_pmlps
 
         grouped_pmlps.to_csv(
@@ -810,9 +838,9 @@ class AutoConstructiveModel(nn.Module):
         #
         most_difficult_repetition_df = (
             pmlps_df.groupby(["repetition"])
-            .agg(["median", "std"])
+            .agg([agg, "std"])
             .sort_values(
-                by=[("monitored_metric", "median"), ("monitored_metric", "std")],
+                by=[("monitored_metric", agg), ("monitored_metric", "std")],
                 ascending=["True", "True"],
             )
             .reset_index()
@@ -823,20 +851,66 @@ class AutoConstructiveModel(nn.Module):
         print(f"Most difficult repetition df:{most_difficult_repetition_df}")
         print(f"Most difficult repetition (kfold): {most_difficult_repetition}")
 
-        topk = min(self.topk, pmlps_df.shape[0])
-        best_arch_id = ranked_pmlps_df.iloc[:topk]["architecture_id"]
-        print(f"Best architecture id: {best_arch_id}")
+        topk_architecture = min(self.topk_architecture, ranked_pmlps_df.shape[0])
 
-        pmlps_df = pmlps_df[pmlps_df["architecture_id"].isin(best_arch_id)].sort_values(
-            # by="validation_matthews_corrcoef", ascending=False
-            by="monitored_metric",
-            ascending=False,
+        # ranked_pmlps_df = ranked_pmlps_df.iloc[:topk_architecture]
+
+        print("ranked_pmlps_df")
+        print(ranked_pmlps_df)
+        ranked_pmlps_df.to_csv(
+            f"ranked_pmlps_{self.current_layer_index}.csv",
+            float_format="{:f}".format,
         )
 
+        min_metric = ranked_pmlps_df.iloc[:topk_architecture]["monitored_metric"].min()
+        ranked_pmlps_df = ranked_pmlps_df[
+            ranked_pmlps_df[("monitored_metric", agg)] >= min_metric[agg]
+        ]
+
+        best_arch_id = ranked_pmlps_df["architecture_id"]
+        print(f"Best architecture id: {best_arch_id}")
+
+        # if self.pareto_frontier:
+        #     pmlps_df = pmlps_df[pmlps_df["dominant_solution"]].sort_values(
+        #         by=["monitored_metric", "loss"],
+        #         ascending=[False, True],
+        #     )
+        # else:
+        pmlps_df = pmlps_df[pmlps_df["architecture_id"].isin(best_arch_id)]
+        pmlps_df["train_validation_gap"] = (
+            pmlps_df[f"train_{self.monitored_metric}"]
+            - pmlps_df[f"validation_{self.monitored_metric}"]
+        )
+
+        pmlps_df.sort_values(
+            # by="validation_matthews_corrcoef", ascending=False
+            # by=["monitored_metric", "loss"],
+            # ascending=[False, True],
+            by=["train_validation_gap"],
+            ascending=[False],
+        )
+        print("-- pmlps_df")
         print(pmlps_df)
+
+        # pareto_variables_list = [
+        #     "num_neurons",
+        #     "monitored_metric",
+        #     "validation_matthews_corrcoef",
+        #     "loss",
+        # ]
+        # pareto_variables = pmlps_df[pareto_variables_list].to_numpy()
+        # pareto_variables *= np.array(
+        #     [1, -1, -1, 1]
+        # )  # is_pareto_efficient works with minimization problems.
+        # pmlps_df["dominant_solution"] = helpers.is_pareto_efficient(pareto_variables)
+        # print("-- pmlps_df dominant_solution")
+        # print(pmlps_df)
+
+        # pmlps_df = pmlps_df[pmlps_df["dominant_solution"]]
 
         # pmlps_df = pmlps_df[pmlps_df["repetition"] == most_difficult_repetition]
 
+        topk = min(self.topk, pmlps_df.shape[0])
         chosen_df = pmlps_df.iloc[:topk, :].reset_index()
         chosen_model_ids = chosen_df["model_id"].tolist()
         # best_mlps = [e[1] for e in pareto_mlps if e[0] in chosen_model_ids]

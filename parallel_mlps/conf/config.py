@@ -47,6 +47,7 @@ class ModelConfig:
     repetitions_for_best_neuron: int
     activations: List[str]
     topk: Optional[int]
+    topk_architecture: Optional[int]
     output_confidence: bool
     min_confidence: float
     min_neurons: int

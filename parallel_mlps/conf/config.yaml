@@ -1,6 +1,6 @@
 training:
     data_home: "~/fcf/projects/parallel_mlps/datasets/"
-    distance_name: null #"correlation"
+    distance_name: null #"correlation" #null #"correlation"
     n_splits: 10
     validation_rate_from_train: 0.25
     debug_test: False
@@ -42,7 +42,8 @@ model:
         - gelu
         - sigmoid
         - tanh
-    topk: 100
+    topk: 1
+    topk_architecture: 1
     output_confidence: False
     min_confidence: 0.8
     min_neurons: 1

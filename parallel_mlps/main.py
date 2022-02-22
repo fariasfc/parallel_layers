@@ -70,7 +70,8 @@ def main(cfg: AutoConstructiveConfig) -> None:
     dl = Dataloader(
         dataset_name=cfg.training.dataset,
         n_splits=cfg.training.n_splits,
-        feature_range=(0, 1),
+        # feature_range=(0, 1),
+        feature_range=None,
         random_state=cfg.training.experiment_num,
         data_home=cfg.training.data_home,
         log=logger,
@@ -136,6 +137,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         repetitions_for_best_neuron=cfg.model.repetitions_for_best_neuron,
         activations=resolve_activations(cfg.model.activations),
         topk=cfg.model.topk,
+        topk_architecture=cfg.model.topk_architecture,
         output_confidence=cfg.model.output_confidence,
         min_confidence=cfg.model.min_confidence,
         min_neurons=cfg.model.min_neurons,

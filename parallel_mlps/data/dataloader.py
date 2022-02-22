@@ -181,10 +181,10 @@ class Dataloader:
 
     def normalize_data(self, data):
         new_data = deepcopy(data)
-        if self.feature_range:
+        if isinstance(self.feature_range, tuple):
             self.min_max_scaler = MinMaxScaler(self.feature_range)
         else:
-            self.min_max_scaler = MinMaxScaler()
+            self.min_max_scaler = StandardScaler()
 
         self.min_max_scaler.fit(data["train"]["data"])
         new_data["train"]["data"] = self.min_max_scaler.transform(data["train"]["data"])
