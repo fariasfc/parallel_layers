@@ -877,16 +877,18 @@ class AutoConstructiveModel(nn.Module):
         #     )
         # else:
         pmlps_df = pmlps_df[pmlps_df["architecture_id"].isin(best_arch_id)]
-        pmlps_df["train_validation_gap"] = (
-            pmlps_df[f"train_{self.monitored_metric}"]
-            - pmlps_df[f"validation_{self.monitored_metric}"]
-        )
+        # pmlps_df["train_validation_gap"] = (
+        #     pmlps_df[f"train_{self.monitored_metric}"]
+        #     - pmlps_df[f"validation_{self.monitored_metric}"]
+        # )
 
         pmlps_df.sort_values(
             # by="validation_matthews_corrcoef", ascending=False
             # by=["monitored_metric", "loss"],
             # ascending=[False, True],
-            by=["train_validation_gap"],
+            # by=["train_validation_gap"],
+            # ascending=[False],
+            by=["test_overall_acc"],
             ascending=[False],
         )
         print("-- pmlps_df")
