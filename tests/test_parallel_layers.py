@@ -44,10 +44,12 @@ def mocked_pmlps():
     pmlps = ParallelMLPs(
         in_features=3,
         out_features=2,
-        hidden_neuron__model_id=[0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5],
-        output__model_id=[0, 1, 2, 3, 4, 5],
-        output__architecture_id=[0, 1, 2, 0, 1, 2],
-        output__repetition=[0, 0, 0, 0, 0, 0],
+        hidden_neuron__model_id=torch.Tensor(
+            [0, 1, 1, 2, 2, 2, 3, 4, 4, 5, 5, 5]
+        ).long(),
+        output__model_id=torch.Tensor([0, 1, 2, 3, 4, 5]).long(),
+        output__architecture_id=torch.Tensor([0, 1, 2, 0, 1, 2]).long(),
+        output__repetition=torch.Tensor([0, 0, 0, 0, 0, 0]).long(),
         drop_samples=0,
         activations=[nn.Identity(), nn.Sigmoid()],
         input_perturbation_strategy=None,
@@ -132,6 +134,7 @@ def parallel_mlp_object(activation_functions, X):
         outputs_ids,
         architecture_ids,
         output__repetition,
+        output__activation,
     ) = build_model_ids(
         repetitions=3,
         activation_functions=activation_functions,
@@ -281,6 +284,7 @@ def test_build_model_ids(
         output_ids,
         architecture_ids,
         output__repetition,
+        output__activation,
     ) = build_model_ids(
         repetitions=repetitions,
         activation_functions=activation_functions,
@@ -289,7 +293,7 @@ def test_build_model_ids(
         step=step,
     )
 
-    assert expected == hidden_layer_ids
+    assert expected == hidden_layer_ids.tolist()
     if start is not None:
         pmlps = ParallelMLPs(
             in_features=N_FEATURES,
@@ -340,6 +344,7 @@ def test_architecture_ids(
         output__model_id,
         output__architecture_id,
         output__repetition,
+        output__activation,
     ) = build_model_ids(
         repetitions,
         activations,

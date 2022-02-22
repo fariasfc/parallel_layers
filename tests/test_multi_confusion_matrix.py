@@ -138,7 +138,7 @@ def test_multimetrics_against_pycm():
         t = targets[start:end]
         mcm.update(p, t)
 
-    mcm_metrics = mcm.calculate_metrics()
+    mcm_metrics = mcm.calculated_metrics
 
     for m in range(n_models):
         p = predictions[:, m].numpy()
@@ -168,7 +168,7 @@ def test_pycm_equivalence():
     multi_cm = MultiConfusionMatrix(n_models, n_classes, "cpu")
     multi_cm.update(predictions, targets)
 
-    multi_cm_metrics = multi_cm.calculate_metrics()
+    multi_cm_metrics = multi_cm.calculated_metrics
     for model_id in range(n_models):
         cm = ConfusionMatrix(targets.numpy(), predictions.numpy()[:, model_id])
         assert cm.Overall_ACC == multi_cm_metrics["overall_acc"][model_id]
@@ -256,7 +256,7 @@ def test_masks():
     multi_cm.update(preds1, y1, mask1)
     multi_cm.update(preds2, y2, mask2)
 
-    multi_cm_metrics = multi_cm.calculate_metrics()
+    multi_cm_metrics = multi_cm.calculated_metrics
     preds = torch.cat((preds1, preds2))
     y = torch.cat((y1, y2))
     mask = torch.cat((mask1, mask2))

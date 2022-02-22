@@ -391,31 +391,7 @@ class AutoConstructiveModel(nn.Module):
 
         return dataloader
 
-    def _get_objectives(self):
-        epoch_train_loss = Objective(
-            name="train_loss",
-            objective=ObjectiveEnum.MINIMIZATION,
-            reduction_fn=lambda individual_losses: torch.mean(
-                torch.cat(individual_losses, dim=0), dim=0
-            ),
-        )
-        epoch_validation_loss = Objective(
-            name="validation_loss",
-            objective=ObjectiveEnum.MINIMIZATION,
-            reduction_fn=lambda individual_losses: torch.mean(
-                torch.cat(individual_losses, dim=0), dim=0
-            ),
-            # min_relative_improvement=self.min_improvement,
-        )
-        epoch_test_loss = Objective(
-            name="test_loss",
-            objective=ObjectiveEnum.MINIMIZATION,
-            reduction_fn=lambda individual_losses: torch.mean(
-                torch.cat(individual_losses, dim=0), dim=0
-            ),
-            # min_relative_improvement=self.min_improvement,
-        )
-
+    # @profile
     def _get_best_mlps(
         self,
         hidden_neuron__model_id: List[int],
@@ -473,15 +449,6 @@ class AutoConstructiveModel(nn.Module):
             self.optimizer_name, self.learning_rate, self.pmlps.parameters()
         )
 
-        self._get_objectives()
-
-        epoch_multi_metrics_accumulator = Objective(
-            name=self.monitored_metric,
-            objective=ObjectiveEnum.MAXIMIZATION,
-            reduction_fn=None,
-            # min_relative_improvement=self.min_improvement,
-        )
-
         accumulators = {
             "train_loss": Objective(
                 "train_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None
@@ -510,7 +477,7 @@ class AutoConstructiveModel(nn.Module):
         self.total_local_resets = 0
 
         best_mlps = []
-        mpls = {}
+        mlps = {}
         metrics_max = None
 
         t = tqdm(range(self.num_epochs))
@@ -530,7 +497,7 @@ class AutoConstructiveModel(nn.Module):
 
             self.train()
 
-            accumulators["train_loss"].reset(reset_best=False)
+            # accumulators["train_loss"].reset(reset_best=False)
             models_train_loss, _ = self.execute_loop(
                 self.train_dataloader,
                 loss_function,
@@ -538,8 +505,8 @@ class AutoConstructiveModel(nn.Module):
                 not_exhausted_models=not_exhausted_models,
                 phase="train",
             )  # [num_models]
-            models_train_loss.apply_reduction()
-            accumulators["train_loss"].set_values(models_train_loss.current_reduction)
+            # models_train_loss.apply_reduction()
+            # accumulators["train_loss"].set_values(models_train_loss.current_reduction)
 
             self.eval()
 
@@ -683,78 +650,15 @@ class AutoConstructiveModel(nn.Module):
                     to_add_or_update_pareto_mlps = dict(
                         zip(
                             best_improved_model_ids_numpy,
-                            self.pmlps.extract_mlps(best_improved_model_ids_numpy),
+                            self.pmlps.extract_params_mlps(
+                                best_improved_model_ids_numpy
+                            ),
+                            # self.pmlps.extract_mlps(best_improved_model_ids_numpy),
                         )
                     )
 
                     for model_id in to_add_or_update_pareto_mlps:
-                        mpls[model_id] = to_add_or_update_pareto_mlps[model_id]
-
-                    # pmlps_df.loc[:, "dominant_solution"] = False
-                    # pmlps_df.loc[epoch_bests_df.index, "dominant_solution"] = True
-                    # helpers.is_pareto_efficient(pmlps_df[["num_neurons", "monitored_metric"]])
-
-                    # to_update_model_ids = set(
-                    #     pmlps_df[
-                    #         (pmlps_df["dominant_solution"])
-                    #         & (pmlps_df["epoch"] == epoch)
-                    #         & (pmlps_df["selected"])
-                    #     ].index
-                    # )
-
-                    # to_add_model_ids = set(
-                    #     pmlps_df[
-                    #         (pmlps_df["dominant_solution"]) & (~pmlps_df["selected"])
-                    #     ].index
-                    # )
-
-                    # to_keep_model_ids = set(
-                    #     pmlps_df[
-                    #         (pmlps_df["dominant_solution"])
-                    #         & (pmlps_df["epoch"] != epoch)
-                    #         & (pmlps_df["selected"])
-                    #     ].index
-                    # )
-
-                    # # to_add_or_update_model_ids = sorted(
-                    # #     list(to_add_model_ids.union(to_update_model_ids))
-                    # # )
-
-                    # to_add_or_update_model_ids = sorted(
-                    #     best_improved_model_ids_numpy.tolist()
-                    # )
-                    # to_add_or_update_pareto_mlps = []
-                    # if len(to_add_or_update_model_ids) > 0:
-                    #     to_add_or_update_pareto_mlps = dict(
-                    #         zip(
-                    #             to_add_or_update_model_ids,
-                    #             self.pmlps.extract_mlps(to_add_or_update_model_ids),
-                    #         )
-                    #     )
-
-                    # pmlps_df["selected"] = False
-                    # pmlps_df.loc[
-                    #     set(to_add_or_update_model_ids).union(to_keep_model_ids),
-                    #     "selected",
-                    # ] = True
-
-                    # if epoch == 0:
-                    #     pareto_mlps = to_add_or_update_pareto_mlps
-                    # else:
-                    #     # if len(to_keep_model_ids) > 0:
-                    #     #     pareto_mlps = [
-                    #     #         e for e in pareto_mlps if e[0] in to_keep_model_ids
-                    #     #     ]
-                    #     # else:
-                    #     #     pareto_mlps = []
-
-                    #     if len(to_add_or_update_model_ids) > 0:
-                    #         # pareto_mlps = pareto_mlps + to_add_or_update_pareto_mlps
-                    #         # pareto_mlps[]
-                    #         for model_id in to_add_or_update_model_ids:
-                    #             pareto_mlps[model_id] = to_add_or_update_pareto_mlps[
-                    #                 model_id
-                    #             ]
+                        mlps[model_id] = to_add_or_update_pareto_mlps[model_id]
 
             self.current_patience[~accumulators["monitored_metric"].improved] += 1
             self.current_patience[accumulators["monitored_metric"].improved] = 0
@@ -765,29 +669,29 @@ class AutoConstructiveModel(nn.Module):
             t.set_postfix(
                 perc_not_exhausted_models=num_not_exhausted_models
                 / self.pmlps.num_unique_models,
-                train_loss=models_train_loss.current_reduction.min(),
+                # train_loss=models_train_loss.current_reduction.min(),
                 best_validation_loss=accumulators["validation_loss"].best.min(),
                 monitored_metric=accumulators["monitored_metric"].best[
                     accumulators["monitored_metric"].get_best_k_ids(1)
                 ],
             )
 
-            wandb.log(
-                {
-                    "train/loss/avg": models_train_loss.current_reduction.detach()
-                    .mean()
-                    .cpu(),
-                    "epoch": epoch,
-                }
-            )
-            wandb.log(
-                {
-                    "train/loss/min": models_train_loss.current_reduction.detach()
-                    .min()
-                    .cpu(),
-                    "epoch": epoch,
-                }
-            )
+            # wandb.log(
+            #     {
+            #         "train/loss/avg": models_train_loss.current_reduction.detach()
+            #         .mean()
+            #         .cpu(),
+            #         "epoch": epoch,
+            #     }
+            # )
+            # wandb.log(
+            #     {
+            #         "train/loss/min": models_train_loss.current_reduction.detach()
+            #         .min()
+            #         .cpu(),
+            #         "epoch": epoch,
+            #     }
+            # )
             wandb.log(
                 {
                     "validation/loss/avg": models_validation_loss.current_reduction.mean().cpu(),
@@ -800,45 +704,10 @@ class AutoConstructiveModel(nn.Module):
                     "epoch": epoch,
                 }
             )
-        # not_exhausted_model_ids = torch.where(
-        #     self.current_patience <= self.local_patience
-        # )[0]
-        # self.append_to_validation_df(epoch_train_loss, epoch_validation_loss, not_exhausted_model_ids)
-        # self.validation_df.to_csv("/tmp/validation_df.csv")
         self.num_trained_mlps += self.total_local_resets
         self.logger.info(
             f"Reset {self.total_local_resets} mlps to construct this layer. num_trained_mlps so far: {self.num_trained_mlps}"
         )
-
-        # metric_history = (
-        #     torch.stack(accumulators["monitored_metric"].tensors).detach().cpu().numpy()
-        # )
-        # max_epoch = 0
-        # early_epochs_model_ids = pmlps_df[
-        #     pmlps_df["epoch"] <= max_epoch
-        # ].index.to_numpy()
-        # if len(early_epochs_model_ids) > 0:
-        #     early_epochs = pmlps_df[pmlps_df["epoch"] <= max_epoch]["epoch"].to_numpy()
-        #     loss_history = pd.DataFrame(
-        #         metric_history[:, early_epochs_model_ids],
-        #         columns=[
-        #             f"{model_id}_{e}"
-        #             for (model_id, e) in zip(early_epochs_model_ids, early_epochs)
-        #         ],
-        #     )
-        #     ax = loss_history.plot()
-        #     ax.figure.savefig("metric_history.pdf")
-        # # loss_history["epoch"] = early_epochs
-
-        # min_neurons = self.pmlps.model_id__num_hidden_neurons.min().item()
-        # max_neurons = self.pmlps.model_id__num_hidden_neurons.max().item()
-        # pmlps_df["dominant_solution"] = helpers.is_pareto_efficient(pmlps_df[["num_neurons", "monitored_metric"]])
-
-        # grouped_pmlps = grouped_pmlps.loc[
-        #     grouped_pmlps[("validation_matthews_corrcoef", "median")]
-        #     < grouped_pmlps[("validation_matthews_corrcoef", "median")].quantile(0.05),
-        #     :,
-        # ]
 
         grouped_pmlps = (
             pmlps_df.groupby(["architecture_id"])
@@ -852,31 +721,6 @@ class AutoConstructiveModel(nn.Module):
                 ascending=[False, True, True],
             )
         ).reset_index()
-
-        pareto_variables = grouped_pmlps[
-            [
-                ("num_neurons", "median"),
-                ("monitored_metric", "median"),
-                ("monitored_metric", "std"),
-            ]
-        ].to_numpy()
-        pareto_variables *= np.array(
-            [1, -1, 1]
-        )  # is_pareto_efficient works with minimization problems.
-        grouped_pmlps["dominant_solution"] = helpers.is_pareto_efficient(
-            pareto_variables
-        )
-
-        grouped_pmlps.to_csv(
-            f"grouped_pmlps_{self.current_layer_index}.csv",
-            float_format="{:f}".format,
-        )
-
-        pareto_grouped_pmlps = grouped_pmlps[grouped_pmlps["dominant_solution"]]
-        pareto_grouped_pmlps.to_csv(
-            f"pareto_grouped_pmlps_{self.current_layer_index}.csv",
-            float_format="{:f}".format,
-        )
 
         pmlps_df.to_csv(
             f"pmlps_{self.current_layer_index}.csv",
@@ -901,9 +745,34 @@ class AutoConstructiveModel(nn.Module):
         # pmlps_df = pmlps_df.loc[pmlps_df["architecture_id"] == best_arch_id]
 
         if self.pareto_frontier:
+            pareto_variables = grouped_pmlps[
+                [
+                    ("num_neurons", "median"),
+                    ("monitored_metric", "median"),
+                    ("monitored_metric", "std"),
+                ]
+            ].to_numpy()
+            pareto_variables *= np.array(
+                [1, -1, 1]
+            )  # is_pareto_efficient works with minimization problems.
+            grouped_pmlps["dominant_solution"] = helpers.is_pareto_efficient(
+                pareto_variables
+            )
+
+            pareto_grouped_pmlps = grouped_pmlps[grouped_pmlps["dominant_solution"]]
+            pareto_grouped_pmlps.to_csv(
+                f"pareto_grouped_pmlps_{self.current_layer_index}.csv",
+                float_format="{:f}".format,
+            )
             ranked_pmlps_df = pareto_grouped_pmlps
         else:
             ranked_pmlps_df = grouped_pmlps
+
+        grouped_pmlps.to_csv(
+            f"grouped_pmlps_{self.current_layer_index}.csv",
+            float_format="{:f}".format,
+        )
+
         # TODO: uncomment
         # ranked_pmlps_df = self.get_ranked_pmlps_df(
         #     grouped_pmlps,
@@ -971,7 +840,44 @@ class AutoConstructiveModel(nn.Module):
         chosen_df = pmlps_df.iloc[:topk, :].reset_index()
         chosen_model_ids = chosen_df["model_id"].tolist()
         # best_mlps = [e[1] for e in pareto_mlps if e[0] in chosen_model_ids]
-        best_mlps = [mpls[model_id] for model_id in chosen_model_ids]
+        best_mlps = []
+        for model_id in chosen_model_ids:
+            mlp_args = mlps[model_id]
+
+            hidden_weight = mlp_args["hidden_weight"]
+            hidden_bias = mlp_args["hidden_bias"]
+            out_weight = mlp_args["out_weight"]
+            out_bias = mlp_args["out_bias"]
+
+            hidden_layer = nn.Linear(
+                in_features=hidden_weight.shape[1],
+                out_features=hidden_weight.shape[0],
+                device=self.device,
+            )
+            out_layer = nn.Linear(
+                in_features=out_weight.shape[1],
+                out_features=out_weight.shape[0],
+                device=self.device,
+            )
+
+            with torch.no_grad():
+                hidden_layer.weight[:, :] = hidden_weight
+                hidden_layer.bias[:] = hidden_bias
+                out_layer.weight[:, :] = out_weight
+                out_layer.bias[:] = out_bias
+
+            best_mlps.append(
+                MLP(
+                    hidden_layer=hidden_layer,
+                    out_layer=out_layer,
+                    activation=mlp_args["activation"],
+                    model_id=mlp_args["metadata"]["model_id"],
+                    metadata=mlp_args["metadata"],
+                    device=self.device,
+                ).to(self.device)
+            )
+
+        # best_mlps = [mlps[model_id] for model_id in chosen_model_ids]
 
         metrics_max = torch.tensor(chosen_df["monitored_metric"].max())
 
@@ -1122,6 +1028,7 @@ class AutoConstructiveModel(nn.Module):
 
         return best_validation_loss, best_model_id
 
+    # @profile
     def execute_loop(
         self,
         dataloader,

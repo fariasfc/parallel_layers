@@ -157,6 +157,7 @@ def build_model_ids(
     ).long()
 
     output__architecture_id = output__architecture_id.long()
+    hidden_neuron__model_id = torch.Tensor(hidden_neuron__model_id).long()
 
     assert len(output__architecture_id) == len(output__model_id)
     assert len(output__architecture_id) == len(output__repetition)
@@ -198,18 +199,27 @@ class ParallelMLPs(nn.Module):
         self.drop_samples = drop_samples
 
         # Mappings: index -> id
-        self.hidden_neuron__model_id = (
-            torch.Tensor(hidden_neuron__model_id).long().to(self.device)
-        )
+        self.hidden_neuron__model_id = hidden_neuron__model_id.to(self.device)
+
         self.output__model_id = output__model_id.to(self.device)
         self.output__architecture_id = output__architecture_id.to(self.device)
         self.output__repetition = output__repetition.to(self.device)
+
+        self.model_id__hidden_idx = {i.item(): [] for i in self.output__model_id.cpu()}
+        for i, ix in enumerate(hidden_neuron__model_id):
+            self.model_id__hidden_idx[ix.item()].append(i)
+
+        # self.model_id__hidden_idxs = {
+        #     i: torch.where(self.hidden_neuron__model_id)[0]
+        #     for i in self.output__model_id
+        # }
+        self.hidden_neuron__model_id = self.hidden_neuron__model_id.to(self.device)
         # self.output__repetition = (
         #     torch.Tensor(output__repetition.float()uuuuuuuu).long().to(self.device)
         # )
 
         self.total_hidden_neurons = len(self.hidden_neuron__model_id)
-        self.unique_model_ids = sorted(list(set(hidden_neuron__model_id)))
+        self.unique_model_ids = sorted(list(set(hidden_neuron__model_id.tolist())))
         self.model_id__num_hidden_neurons = torch.from_numpy(
             np.bincount(self.hidden_neuron__model_id.cpu().numpy())
         ).to(self.device)
@@ -237,6 +247,7 @@ class ParallelMLPs(nn.Module):
         self.model_id__activation_id = (
             self.model_id__num_hidden_neurons.cumsum(0) - 1
         ) // self.activations_split
+        self.model_id__activation_id = self.model_id__activation_id.cpu()
         # # Adjusting because the last element is always increased due to the cumsum.
         # self.model_id__activation_id[-1] -= 1
 
@@ -391,6 +402,51 @@ class ParallelMLPs(nn.Module):
 
         return loss
 
+    # @profile
+    def extract_params_mlps(self, model_ids: List[int]) -> List[MLP]:
+        """Extracts a completely independent MLP."""
+        if max(model_ids) >= self.num_unique_models:
+            raise ValueError(
+                f"model_id {max(model_ids)} > num_uniqe_models {self.num_unique_models}"
+            )
+
+        rets = []
+        with torch.no_grad():
+            for model_id in model_ids:
+                # model_neurons = torch.where(self.hidden_neuron__model_id == model_id)[0]
+                model_neurons = self.model_id__hidden_idx[model_id]
+                hidden_weight = self.hidden_layer.weight[model_neurons, :]
+                hidden_bias = self.hidden_layer.bias[model_neurons]
+
+                out_weight = self.weight[:, model_neurons]
+                out_bias = self.bias[model_id, :]
+
+                activation = self.get_activation_from_model_id(model_id)
+
+                ret = {
+                    "hidden_weight": hidden_weight.clone(),
+                    "hidden_bias": hidden_bias.clone(),
+                    "out_weight": out_weight.clone(),
+                    "out_bias": out_bias.clone(),
+                    "activation": activation,
+                    "metadata": {"model_id": model_id},
+                }
+                rets.append(ret)
+
+                # mlps.append(
+                #     MLP(
+                #         hidden_layer=hidden_layer,
+                #         out_layer=out_layer,
+                #         activation=activation,
+                #         model_id=model_id,
+                #         metadata={"model_id": model_id},
+                #         device=self.device,
+                #     )
+                # )
+
+        return rets
+
+    # @profile
     def extract_mlps(self, model_ids: List[int]) -> List[MLP]:
         """Extracts a completely independent MLP."""
         if max(model_ids) >= self.num_unique_models:
@@ -401,7 +457,8 @@ class ParallelMLPs(nn.Module):
         mlps = []
         with torch.no_grad():
             for model_id in model_ids:
-                model_neurons = self.hidden_neuron__model_id == model_id
+                model_neurons = torch.where(self.hidden_neuron__model_id == model_id)[0]
+                # model_neurons = self.model_id__hidden_idx[model_id]
                 hidden_weight = self.hidden_layer.weight[model_neurons, :]
                 hidden_bias = self.hidden_layer.bias[model_neurons]
 
@@ -418,11 +475,11 @@ class ParallelMLPs(nn.Module):
                     out_features=self.out_features,
                 )
 
-                hidden_layer.weight[:, :] = hidden_weight.clone()
-                hidden_layer.bias[:] = hidden_bias.clone()
+                hidden_layer.weight[:, :] = hidden_weight
+                hidden_layer.bias[:] = hidden_bias
 
-                out_layer.weight[:, :] = out_weight.clone()
-                out_layer.bias[:] = out_bias.clone()
+                out_layer.weight[:, :] = out_weight
+                out_layer.bias[:] = out_bias
 
                 mlps.append(
                     MLP(
@@ -432,7 +489,7 @@ class ParallelMLPs(nn.Module):
                         model_id=model_id,
                         metadata={"model_id": model_id},
                         device=self.device,
-                    ).to(self.device)
+                    )
                 )
 
         return mlps
