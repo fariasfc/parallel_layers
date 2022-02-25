@@ -32,6 +32,10 @@ class MultiConfusionMatrix:
         self.device = device
         self._is_dirty = True
 
+    def reset_cm(self):
+        self.cm *= 0
+        self._is_dirty = True
+
     def update(self, predictions: Tensor, targets: Tensor, mask: Tensor = None) -> None:
         """Updates the Confuson Matrix
 
@@ -96,7 +100,9 @@ class MultiConfusionMatrix:
         return self._calculate_metrics
 
     def to_dataframe(self, prefix=None):
-        df = pd.DataFrame(self.calculated_metrics)
+        calculated_metrics = self.calculated_metrics
+        calculated_metrics = {k: v.cpu() for (k, v) in calculated_metrics.items()}
+        df = pd.DataFrame(calculated_metrics)
         if prefix is not None:
             df.columns = [f"{prefix}{c}" for c in df.columns]
         if self.model_ids is not None:

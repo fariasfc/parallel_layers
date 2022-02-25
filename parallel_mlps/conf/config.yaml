@@ -2,7 +2,7 @@ training:
     data_home: "~/fcf/projects/parallel_mlps/datasets/"
     distance_name: null #"correlation" #null #"correlation"
     n_splits: 10
-    validation_rate_from_train: 0.25
+    validation_rate_from_train: null # 0.25
     debug_test: False
     reset_exhausted_models: False
 
@@ -30,7 +30,7 @@ model:
     optimizer_name: adam
     learning_rate: 3e-4
     num_workers: 0
-    repetitions: 10
+    repetitions: 8
     repetitions_for_best_neuron: 100
     strategy_select_best: global_best #carchitecture_median_best #global_best
     activations:

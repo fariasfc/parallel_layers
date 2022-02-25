@@ -20,7 +20,7 @@ class TrainingConfig:
     experiment_num: int
 
     project_name: str
-    validation_rate_from_train: float
+    validation_rate_from_train: Optional[float]
     debug_test: bool
     reset_exhausted_models: bool
 

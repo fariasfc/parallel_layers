@@ -195,6 +195,8 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         y_validation=y_val,
         x_test=x_test_debug,
         y_test=y_test_debug,
+        current_test_fold=data["test"]["current_fold"],
+        train_fold_ids=data["train"]["fold_id"],
     )
 
     # profiler.stop()
@@ -279,7 +281,8 @@ def evaluate_classic_models(
         # logits_test = model.ohe.transform(logits_test[:, None]).toarray()
 
         log_results({model_name: logits_train}, y_train, "train")
-        log_results({model_name: logits_val}, y_validation, "val")
+        if y_validation is not None:
+            log_results({model_name: logits_val}, y_validation, "val")
         if x_test is not None:
             logits_test = model.predict_proba(x_test)
             log_results({model_name: logits_test}, y_test, "test")

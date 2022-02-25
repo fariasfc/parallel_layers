@@ -458,6 +458,9 @@ class AutoConstructiveModel(nn.Module):
             "validation_loss": Objective(
                 "validation_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None
             ),
+            "holdout_loss": Objective(
+                "holdout_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None
+            ),
             "test_loss": Objective(
                 "test_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None
             ),
@@ -484,6 +487,35 @@ class AutoConstructiveModel(nn.Module):
 
         t = tqdm(range(self.num_epochs))
         pmlps_df = pd.DataFrame()
+
+        train_multi_metrics = MultiConfusionMatrix(
+            self.pmlps.num_unique_models,
+            self.pmlps.out_features,
+            # "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
+            "cuda",
+            self.pmlps.output__model_id,
+        )
+        validation_multi_metrics = MultiConfusionMatrix(
+            self.pmlps.num_unique_models,
+            self.pmlps.out_features,
+            # "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
+            "cuda",
+            self.pmlps.output__model_id,
+        )
+        holdout_multi_metrics = MultiConfusionMatrix(
+            self.pmlps.num_unique_models,
+            self.pmlps.out_features,
+            # "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
+            "cuda",
+            self.pmlps.output__model_id,
+        )
+        test_multi_metrics = MultiConfusionMatrix(
+            self.pmlps.num_unique_models,
+            self.pmlps.out_features,
+            # "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
+            "cuda",
+            self.pmlps.output__model_id,
+        )
         for epoch in t:
             self.epoch = epoch
 
@@ -500,13 +532,15 @@ class AutoConstructiveModel(nn.Module):
             self.train()
 
             # accumulators["train_loss"].reset(reset_best=False)
+            train_multi_metrics.reset_cm()
             models_train_loss, train_multi_metrics = self.execute_loop(
                 self.train_dataloader,
                 loss_function,
                 optimizer,
                 not_exhausted_models=not_exhausted_models,
                 phase="train",
-                return_multi_metrics=True,
+                # return_multi_metrics=True,
+                multi_cm=train_multi_metrics,
             )  # [num_models]
             # models_train_loss.apply_reduction()
             # accumulators["train_loss"].set_values(models_train_loss.current_reduction)
@@ -524,13 +558,13 @@ class AutoConstructiveModel(nn.Module):
             # return_multi_metrics = True
 
             with torch.inference_mode():
-                # TODO: rodar validacao usando a negacao do train_mask na hora de calcular o loss
+                validation_multi_metrics.reset_cm()
                 models_validation_loss, validation_multi_metrics = self.execute_loop(
-                    dataloader=self.validation_dataloader,
+                    dataloader=self.train_dataloader,  # passing train but we mask it inside
                     loss_function=loss_function,
                     optimizer=None,
                     not_exhausted_models=None,
-                    return_multi_metrics=return_multi_metrics,
+                    multi_cm=validation_multi_metrics,
                     phase="validation",
                 )  # [num_models]
                 models_validation_loss.apply_reduction()
@@ -559,14 +593,30 @@ class AutoConstructiveModel(nn.Module):
                 # if model__global_best_metric.objective == ObjectiveEnum.MAXIMIZATION:
                 #     best_metrics = best_metrics * (-1) # because pareto expect "costs" (minimization problem)
 
+                holdout_multi_metrics.reset_cm()
+                accumulators["holdout_loss"].reset(reset_best=True)
+                models__holdout_loss, holdout_multi_metrics = self.execute_loop(
+                    dataloader=self.validation_dataloader,
+                    loss_function=loss_function,
+                    optimizer=None,
+                    not_exhausted_models=None,
+                    multi_cm=holdout_multi_metrics,
+                    phase="holdout",
+                )  # [num_models]
+                models__holdout_loss.apply_reduction()
+                accumulators["holdout_loss"].set_values(
+                    models__holdout_loss.current_reduction
+                )
+
                 if test_dataloader:
+                    test_multi_metrics.reset_cm()
                     accumulators["test_loss"].reset()
                     models__test_loss, test_multi_metrics = self.execute_loop(
                         dataloader=test_dataloader,
                         loss_function=loss_function,
                         optimizer=None,
                         not_exhausted_models=None,
-                        return_multi_metrics=True,
+                        multi_cm=test_multi_metrics,
                         phase="test",
                     )  # [num_models]
                     models__test_loss.apply_reduction()
@@ -580,6 +630,9 @@ class AutoConstructiveModel(nn.Module):
                     ).loc[best_improved_model_ids_numpy]
                     validation_multi_metrics_df = validation_multi_metrics.to_dataframe(
                         prefix="validation_"
+                    ).loc[best_improved_model_ids_numpy]
+                    holdout_multi_metrics_df = holdout_multi_metrics.to_dataframe(
+                        prefix="holdout_"
                     ).loc[best_improved_model_ids_numpy]
 
                     epoch_bests_df = pd.DataFrame(
@@ -629,6 +682,9 @@ class AutoConstructiveModel(nn.Module):
                     )
                     epoch_bests_df = pd.merge(
                         epoch_bests_df, validation_multi_metrics_df, on=["model_id"]
+                    )
+                    epoch_bests_df = pd.merge(
+                        epoch_bests_df, holdout_multi_metrics_df, on=["model_id"]
                     )
 
                     if test_dataloader:
@@ -718,35 +774,44 @@ class AutoConstructiveModel(nn.Module):
 
         agg = "mean"
 
+        pmlps_df = pmlps_df.sort_values(by="monitored_metric", ascending=False)
+        architecture_counters = {i: 0 for i in pmlps_df["architecture_id"]}
+        for arch_id in pmlps_df["architecture_id"]:
+            architecture_counters[arch_id] += 1
+            if architecture_counters[arch_id] == self.repetitions:
+                best_arch_id = arch_id
+                break
+        pmlps_df["best_arch_id"] = pmlps_df["architecture_id"] == best_arch_id
+
         grouped_pmlps = (
-            pmlps_df.groupby(["architecture_id"])
+            pmlps_df.groupby(["architecture_id"])[
+                list(set(pmlps_df.columns).difference({"activation_name"}))
+            ]
             .agg([agg, "std"])
             .sort_values(
                 by=[
-                    ("monitored_metric", agg),
-                    ("monitored_metric", "std"),
+                    # ("monitored_metric", agg),
+                    ("holdout_overall_acc", agg),
+                    # ("monitored_metric", "std"),
                     ("num_neurons", agg),
                 ],
-                ascending=[False, True, True],
+                ascending=[False, True],
             )
         ).reset_index()
 
-        # pareto_variables = pmlps_df[
-        #     [
-        #         "num_neurons",
-        #         "monitored_metric",
-        #         "monitored_metric",
-        #     ]
-        # ].to_numpy()
-        # pareto_variables *= np.array(
-        #     [1, -1, 1]
-        # )  # is_pareto_efficient works with minimization problems.
-        # pmlps_df["dominant_solution"] = helpers.is_pareto_efficient(pareto_variables)
+        pareto_variables = pmlps_df[
+            ["num_neurons", "monitored_metric", "epoch"]
+        ].to_numpy()
+        pareto_variables *= np.array(
+            [1, -1, -1]
+        )  # is_pareto_efficient works with minimization problems.
+        pmlps_df["dominant_solution"] = helpers.is_pareto_efficient(pareto_variables)
 
         pmlps_df.to_csv(
             f"pmlps_{self.current_layer_index}.csv",
             float_format="{:f}".format,
         )
+        # pmlps_df = pmlps_df[pmlps_df["dominant_solution"]]
 
         # name, value, best, worst
         mcdm_tuples = [
@@ -836,20 +901,20 @@ class AutoConstructiveModel(nn.Module):
         # ).reset_index()
 
         #
-        most_difficult_repetition_df = (
-            pmlps_df.groupby(["repetition"])
-            .agg([agg, "std"])
-            .sort_values(
-                by=[("monitored_metric", agg), ("monitored_metric", "std")],
-                ascending=["True", "True"],
-            )
-            .reset_index()
-        )
-        most_difficult_repetition = most_difficult_repetition_df.iloc[0][
-            "repetition"
-        ].item()
-        print(f"Most difficult repetition df:{most_difficult_repetition_df}")
-        print(f"Most difficult repetition (kfold): {most_difficult_repetition}")
+        # most_difficult_repetition_df = (
+        #     pmlps_df.groupby(["repetition"])
+        #     .agg([agg, "std"])
+        #     .sort_values(
+        #         by=[("monitored_metric", agg), ("monitored_metric", "std")],
+        #         ascending=["True", "True"],
+        #     )
+        #     .reset_index()
+        # )
+        # most_difficult_repetition = most_difficult_repetition_df.iloc[0][
+        #     "repetition"
+        # ].item()
+        # print(f"Most difficult repetition df:{most_difficult_repetition_df}")
+        # print(f"Most difficult repetition (kfold): {most_difficult_repetition}")
 
         topk_architecture = min(self.topk_architecture, ranked_pmlps_df.shape[0])
 
@@ -862,12 +927,15 @@ class AutoConstructiveModel(nn.Module):
             float_format="{:f}".format,
         )
 
-        min_metric = ranked_pmlps_df.iloc[:topk_architecture]["monitored_metric"].min()
+        min_metric = ranked_pmlps_df.iloc[:topk_architecture][
+            "holdout_overall_acc"
+        ].max()
+        print(f"min_metric: {min_metric}")
         ranked_pmlps_df = ranked_pmlps_df[
-            ranked_pmlps_df[("monitored_metric", agg)] >= min_metric[agg]
+            ranked_pmlps_df[("holdout_overall_acc", agg)] >= min_metric[agg]
         ]
 
-        best_arch_id = ranked_pmlps_df["architecture_id"]
+        best_arch_id = ranked_pmlps_df["architecture_id"]["mean"]
         print(f"Best architecture id: {best_arch_id}")
 
         # if self.pareto_frontier:
@@ -882,17 +950,17 @@ class AutoConstructiveModel(nn.Module):
         #     - pmlps_df[f"validation_{self.monitored_metric}"]
         # )
 
-        pmlps_df.sort_values(
+        pmlps_df = pmlps_df.sort_values(
             # by="validation_matthews_corrcoef", ascending=False
             # by=["monitored_metric", "loss"],
             # ascending=[False, True],
             # by=["train_validation_gap"],
             # ascending=[False],
-            by=["test_overall_acc"],
-            ascending=[False],
+            by=["holdout_overall_acc", "num_neurons"],
+            ascending=[False, True],
         )
         print("-- pmlps_df")
-        print(pmlps_df)
+        print(pmlps_df.head())
 
         # pareto_variables_list = [
         #     "num_neurons",
@@ -1111,20 +1179,22 @@ class AutoConstructiveModel(nn.Module):
         loss_function,
         optimizer,
         not_exhausted_models=None,
-        return_multi_metrics=False,
+        # return_multi_metrics=False,
+        multi_cm=None,
         phase="train",
     ):
         loss_accumulator = Objective(
             "loss", ObjectiveEnum.MINIMIZATION, reduction_fn="mean"
         )
-        multi_cm = None
-        if return_multi_metrics:
-            multi_cm = MultiConfusionMatrix(
-                self.pmlps.num_unique_models,
-                self.pmlps.out_features,
-                "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
-                self.pmlps.output__model_id,
-            )
+        # multi_cm = None
+        # if return_multi_metrics:
+        #     multi_cm = MultiConfusionMatrix(
+        #         self.pmlps.num_unique_models,
+        #         self.pmlps.out_features,
+        #         # "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
+        #         "cuda",
+        #         self.pmlps.output__model_id,
+        #     )
 
         drop_samples = torch.zeros((self.batch_size, self.pmlps.num_unique_models)).to(
             self.device
@@ -1198,13 +1268,13 @@ class AutoConstructiveModel(nn.Module):
 
                 self.pmlps.enforce_input_perturbation()
 
-            if return_multi_metrics:
-                if current_mask is not None:
-                    current_mask = current_mask.cpu()
+            # if return_multi_metrics:
+            # if current_mask is not None:
+            #     current_mask = current_mask.cpu()
 
-                multi_cm.update(
-                    outputs, y, current_mask
-                )  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
+            multi_cm.update(
+                outputs, y, current_mask
+            )  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
 
         return loss_accumulator, multi_cm
 
@@ -1439,24 +1509,39 @@ class AutoConstructiveModel(nn.Module):
 
         return num_neurons, activation_name
 
-    def _generate_model_train_mask(self, num_unique_models, y):
-        splitter = StratifiedKFold(
-            n_splits=self.repetitions, shuffle=True, random_state=self.random_state
-        )
+    def _generate_model_train_mask(self, num_unique_models, y, train_fold_ids):
         train_mask = torch.zeros((y.shape[0], num_unique_models)).bool()
-        folds = torch.zeros(num_unique_models).int()
+        model__fold = torch.zeros(num_unique_models).int()
+        if train_fold_ids is None:
+            splitter = StratifiedKFold(
+                n_splits=self.repetitions, shuffle=True, random_state=self.random_state
+            )
 
-        step = num_unique_models // self.repetitions
-        for k, (train_index, val_index) in enumerate(splitter.split(y, y)):
+            step = num_unique_models // self.repetitions
+            iterator = splitter.split(y, y)
+        else:
+            unique_fold_ids = np.unique(train_fold_ids)
+            assert (
+                self.repetitions == unique_fold_ids.shape[0]
+            ), "self.repetitions != unique_fold_ids.shape[0]"
+            iterator = (
+                (
+                    np.where(train_fold_ids != i)[0].ravel(),
+                    np.where(train_fold_ids == i)[0].ravel(),
+                )
+                for i in unique_fold_ids
+            )
+
+        for k, (train_index, val_index) in enumerate(iterator):
             train_index = torch.tensor(train_index).long()
-            mask = self.output__repetition == k
-            model_index = torch.where(mask)[0].unsqueeze(1)
+            model_mask = self.output__repetition == k
+            model_index = torch.where(model_mask)[0].unsqueeze(1)
             train_mask[train_index, model_index] = True
-            folds[mask] = k
+            model__fold[model_mask] = k
 
         train_mask = train_mask.bool()
         train_mask = train_mask.to(self.device)
-        return train_mask, folds
+        return train_mask, model__fold
 
     def fit(
         self,
@@ -1466,12 +1551,14 @@ class AutoConstructiveModel(nn.Module):
         y_validation: Tensor,
         x_test: Optional[Tensor],
         y_test: Optional[Tensor],
+        current_test_fold: int,
+        train_fold_ids: Optional[np.ndarray],  # [fold, indices]
     ):
 
         x_train, y_train = self.__adjust_data(x_train, y_train)
         x_validation, y_validation = self.__adjust_data(x_validation, y_validation)
 
-        if self.cross_validation:
+        if self.cross_validation and x_validation is not None:
             x_train = torch.cat((x_train, x_validation))
             y_train = torch.cat((y_train, y_validation))
 
@@ -1494,15 +1581,31 @@ class AutoConstructiveModel(nn.Module):
             self.max_neurons,
             self.step_neurons,
         )
+        # Construct validation
+        unique_fold_ids = np.unique(train_fold_ids)
+        holdout_validation_id = np.random.choice(unique_fold_ids)
+        holdout_mask = train_fold_ids == holdout_validation_id
+
+        x_validation = x_train[holdout_mask]
+        y_validation = y_train[holdout_mask]
+
+        x_train = x_train[~holdout_mask]
+        y_train = y_train[~holdout_mask]
+
+        train_fold_ids = train_fold_ids[~holdout_mask]
+
         self.train_mask, self.output__kfold = self._generate_model_train_mask(
-            len(np.unique(output__model_id)), y_train
+            len(np.unique(output__model_id)),
+            y_train,
+            train_fold_ids=train_fold_ids,
         )
 
         if self.all_data_to_device:
             x_train = x_train.to(self.device)
             y_train = y_train.to(self.device)
-            x_validation = x_validation.to(self.device)
-            y_validation = y_validation.to(self.device)
+            if x_validation is not None:
+                x_validation = x_validation.to(self.device)
+                y_validation = y_validation.to(self.device)
             if y_test is not None:
                 x_test = x_test.to(self.device)
                 y_test = y_test.to(self.device)
@@ -1565,12 +1668,18 @@ class AutoConstructiveModel(nn.Module):
                 )
 
             train_dataloader = self._get_dataloader(current_train_x, current_train_y)
-            if self.cross_validation:
-                validation_dataloader = train_dataloader
-            else:
+
+            if current_validation_x is not None:
                 validation_dataloader = self._get_dataloader(
                     current_validation_x, current_validation_y
                 )
+
+            else:
+                validation_dataloader = None
+
+            if self.cross_validation:
+                validation_dataloader = train_dataloader
+
             if current_test_x is not None:
                 test_dataloader = self._get_dataloader(current_test_x, current_test_y)
 

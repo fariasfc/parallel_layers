@@ -403,19 +403,29 @@ class Dataloader:
         np.random.seed(self.random_state)
         np.apply_along_axis(np.random.shuffle, 0, folds)
 
+        data["folds"] = folds
+        folds__ids = np.zeros_like(folds)
+
+        for f in range(folds__ids.shape[0]):
+            folds__ids[f] = f
+
         # folds = np.array(folds_list).T
         for split in range(self.n_splits):
             train_splits = np.ones(self.n_splits).astype(np.bool)
             train_splits[split] = False
 
             test_index = folds[split]
+            data["test"]["current_fold"] = split
             data["test"]["data"] = self.x[test_index]
             data["test"]["target"] = self.y[test_index]
 
             train_val_index = folds[train_splits, :].ravel()
+            train_val_index__fold_id = folds__ids[train_splits, :].ravel()
             if validation_rate_from_train is None or validation_rate_from_train == 0:
+
                 data["train"]["data"] = self.x[train_val_index]
                 data["train"]["target"] = self.y[train_val_index]
+                data["train"]["fold_id"] = train_val_index__fold_id
 
                 if self.dataset_name == "mnist_784":
                     data["train"]["data"] = self.x
@@ -423,6 +433,7 @@ class Dataloader:
                     data["test"]["data"] = self.fixed_x_test
                     data["test"]["target"] = self.fixed_y_test
             else:
+                raise NotImplementedError("fold_ids not adjusted for this situation.")
                 val = []
                 for k in range(n_classes):
                     idx_k = self.y[train_val_index].squeeze() == k
