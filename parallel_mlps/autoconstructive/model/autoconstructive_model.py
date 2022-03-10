@@ -492,28 +492,28 @@ class AutoConstructiveModel(nn.Module):
             self.pmlps.num_unique_models,
             self.pmlps.out_features,
             # "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
-            "cuda",
+            self.device,
             self.pmlps.output__model_id,
         )
         validation_multi_metrics = MultiConfusionMatrix(
             self.pmlps.num_unique_models,
             self.pmlps.out_features,
             # "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
-            "cuda",
+            self.device,
             self.pmlps.output__model_id,
         )
         holdout_multi_metrics = MultiConfusionMatrix(
             self.pmlps.num_unique_models,
             self.pmlps.out_features,
             # "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
-            "cuda",
+            self.device,
             self.pmlps.output__model_id,
         )
         test_multi_metrics = MultiConfusionMatrix(
             self.pmlps.num_unique_models,
             self.pmlps.out_features,
             # "cpu",  # TODO: change to CUDA when https://github.com/pytorch/pytorch/issues/72053 is fixed.
-            "cuda",
+            self.device,
             self.pmlps.output__model_id,
         )
         for epoch in t:
@@ -867,15 +867,16 @@ class AutoConstructiveModel(nn.Module):
         )
 
         # TODO: uncomment
-        # ranked_pmlps_df = self.get_ranked_pmlps_df(
-        #     grouped_pmlps,
-        #     mcdm_tuples,
-        #     # theoretical_best=theoretical_best,
-        #     # theoretical_worst=theoretical_worst,
-        #     theoretical_best=None,
-        #     theoretical_worst=None,
-        #     only_pareto_solutions=True,
-        # )
+        ranked_pmlps_df = self.get_ranked_pmlps_df(
+            grouped_pmlps,
+            mcdm_tuples,
+            # theoretical_best=theoretical_best,
+            # theoretical_worst=theoretical_worst,
+            theoretical_best=None,
+            theoretical_worst=None,
+            only_pareto_solutions=False,
+            sort_by_rank=False,
+        )
         # ranked_pmlps_df.to_csv(
         #     f"ranked_pmlps_{self.current_layer_index}.csv",
         #     float_format="{:f}".format,
@@ -1082,6 +1083,7 @@ class AutoConstructiveModel(nn.Module):
         theoretical_best,
         theoretical_worst,
         only_pareto_solutions=True,
+        sort_by_rank=True,
     ):
 
         mcdm_keys = [k[0] for k in mcdm_tuples]
@@ -1091,9 +1093,9 @@ class AutoConstructiveModel(nn.Module):
 
         decision_matrix = pmlps_df[mcdm_keys].to_numpy()
 
-        pareto_mask = helpers.is_pareto_efficient(decision_matrix)
-        pmlps_df["dominant_solution"] = pareto_mask
         if only_pareto_solutions:
+            pareto_mask = helpers.is_pareto_efficient(decision_matrix)
+            pmlps_df["dominant_solution"] = pareto_mask
             pmlps_df = pmlps_df.loc[pareto_mask]
             decision_matrix = pmlps_df[mcdm_keys].to_numpy()
 
@@ -1118,7 +1120,8 @@ class AutoConstructiveModel(nn.Module):
 
         pmlps_df["rank"] = ranks
 
-        pmlps_df = pmlps_df.sort_values(by=["rank"], ascending=False).reset_index()
+        if sort_by_rank:
+            pmlps_df = pmlps_df.sort_values(by=["rank"], ascending=False).reset_index()
 
         return pmlps_df
 
@@ -1582,17 +1585,17 @@ class AutoConstructiveModel(nn.Module):
             self.step_neurons,
         )
         # Construct validation
-        unique_fold_ids = np.unique(train_fold_ids)
-        holdout_validation_id = np.random.choice(unique_fold_ids)
-        holdout_mask = train_fold_ids == holdout_validation_id
+        # unique_fold_ids = np.unique(train_fold_ids)
+        # holdout_validation_id = np.random.choice(unique_fold_ids)
+        # holdout_mask = train_fold_ids == holdout_validation_id
 
-        x_validation = x_train[holdout_mask]
-        y_validation = y_train[holdout_mask]
+        # x_validation = x_train[holdout_mask]
+        # y_validation = y_train[holdout_mask]
 
-        x_train = x_train[~holdout_mask]
-        y_train = y_train[~holdout_mask]
+        # x_train = x_train[~holdout_mask]
+        # y_train = y_train[~holdout_mask]
 
-        train_fold_ids = train_fold_ids[~holdout_mask]
+        # train_fold_ids = train_fold_ids[~holdout_mask]
 
         self.train_mask, self.output__kfold = self._generate_model_train_mask(
             len(np.unique(output__model_id)),

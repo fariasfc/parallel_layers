@@ -87,6 +87,7 @@ def main(cfg: AutoConstructiveConfig) -> None:
         splits = dl.get_splits_iter_regions(
             validation_rate_from_train=cfg.training.validation_rate_from_train,
             distance_name="correlation",
+            fixed_test=True,
         )
 
     next_kfold = cfg.training.experiment_num % cfg.training.n_splits
@@ -176,6 +177,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
     y_test = data["test"]["target"]
     y_test = y_test.squeeze()
     logger.info(f"Test set: {x_test.shape}")
+    logger.info(f"Test index: {data['test']['index']}")
     if cfg.training.debug_test:
         x_test_debug = x_test
         y_test_debug = y_test

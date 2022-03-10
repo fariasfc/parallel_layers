@@ -340,7 +340,7 @@ class Dataloader:
         return folds, fold_col_lb
 
     def get_splits_iter_regions(
-        self, validation_rate_from_train=None, distance_name=None
+        self, validation_rate_from_train=None, distance_name=None, fixed_test=False
     ):
         np.random.seed(self.random_state)
         # Default checking from scikitlearn kfold
@@ -399,11 +399,18 @@ class Dataloader:
 
             np.savez(cache_file, folds=folds, fold_col_lb=fold_col_lb)
 
+        if fixed_test:
+            test_index = folds[-1]
+            folds = folds[:-1]
+            self.n_splits = self.n_splits - 1
+
         # embaralhando os elementos das colunas (como se fossem random dos splits)
         np.random.seed(self.random_state)
         np.apply_along_axis(np.random.shuffle, 0, folds)
 
         data["folds"] = folds
+        data["x"] = self.x
+        data["y"] = self.y
         folds__ids = np.zeros_like(folds)
 
         for f in range(folds__ids.shape[0]):
@@ -414,17 +421,21 @@ class Dataloader:
             train_splits = np.ones(self.n_splits).astype(np.bool)
             train_splits[split] = False
 
-            test_index = folds[split]
+            if not fixed_test:
+                test_index = folds[split]
+
             data["test"]["current_fold"] = split
             data["test"]["data"] = self.x[test_index]
             data["test"]["target"] = self.y[test_index]
+            data["test"]["index"] = test_index
 
-            train_val_index = folds[train_splits, :].ravel()
+            train_val_index = folds[train_splits, :]
+            train_val_index_ravel = train_val_index.ravel()
             train_val_index__fold_id = folds__ids[train_splits, :].ravel()
             if validation_rate_from_train is None or validation_rate_from_train == 0:
 
-                data["train"]["data"] = self.x[train_val_index]
-                data["train"]["target"] = self.y[train_val_index]
+                data["train"]["data"] = self.x[train_val_index_ravel]
+                data["train"]["target"] = self.y[train_val_index_ravel]
                 data["train"]["fold_id"] = train_val_index__fold_id
 
                 if self.dataset_name == "mnist_784":
@@ -432,6 +443,19 @@ class Dataloader:
                     data["train"]["target"] = self.y
                     data["test"]["data"] = self.fixed_x_test
                     data["test"]["target"] = self.fixed_y_test
+            elif validation_rate_from_train == -1:
+                train_splits = np.ones(len(folds)).astype(np.bool)
+                train_splits[split] = False
+                train_index = folds[train_splits, :].ravel()
+                val_index = folds[~train_splits].ravel()
+                data["train"]["data"] = self.x[train_index]
+                data["train"]["target"] = self.y[train_index]
+                data["train"]["fold_id"] = folds__ids[train_splits, :].ravel()
+
+                data["val"] = {}
+                data["val"]["data"] = self.x[val_index]
+                data["val"]["target"] = self.y[val_index]
+
             else:
                 raise NotImplementedError("fold_ids not adjusted for this situation.")
                 val = []
