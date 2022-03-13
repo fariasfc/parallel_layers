@@ -772,218 +772,7 @@ class AutoConstructiveModel(nn.Module):
             f"Reset {self.total_local_resets} mlps to construct this layer. num_trained_mlps so far: {self.num_trained_mlps}"
         )
 
-        agg = "mean"
-
-        pmlps_df = pmlps_df.sort_values(by="monitored_metric", ascending=False)
-        architecture_counters = {i: 0 for i in pmlps_df["architecture_id"]}
-        for arch_id in pmlps_df["architecture_id"]:
-            architecture_counters[arch_id] += 1
-            if architecture_counters[arch_id] == self.repetitions:
-                best_arch_id = arch_id
-                break
-        pmlps_df["best_arch_id"] = pmlps_df["architecture_id"] == best_arch_id
-
-        grouped_pmlps = (
-            pmlps_df.groupby(["architecture_id"])[
-                list(set(pmlps_df.columns).difference({"activation_name"}))
-            ]
-            .agg([agg, "std"])
-            .sort_values(
-                by=[
-                    # ("monitored_metric", agg),
-                    ("holdout_overall_acc", agg),
-                    # ("monitored_metric", "std"),
-                    ("num_neurons", agg),
-                ],
-                ascending=[False, True],
-            )
-        ).reset_index()
-
-        pareto_variables = pmlps_df[
-            ["num_neurons", "monitored_metric", "epoch"]
-        ].to_numpy()
-        pareto_variables *= np.array(
-            [1, -1, -1]
-        )  # is_pareto_efficient works with minimization problems.
-        pmlps_df["dominant_solution"] = helpers.is_pareto_efficient(pareto_variables)
-
-        pmlps_df.to_csv(
-            f"pmlps_{self.current_layer_index}.csv",
-            float_format="{:f}".format,
-        )
-        # pmlps_df = pmlps_df[pmlps_df["dominant_solution"]]
-
-        # name, value, best, worst
-        mcdm_tuples = [
-            (("num_neurons", agg), -1, self.min_neurons, self.max_neurons),
-            (("monitored_metric", agg), 1, 0, 1),
-            (("monitored_metric", "std"), -1, 0, 1),
-            # (("loss", "median"), -1, 0, 1),
-            # (("loss", "std"), -1, 0, 1),
-            # (("loss", "std"), -1, None, None),
-        ]
-        # best_arch_id = (
-        #     grouped_pmlps.sort_values(by=[("metrics", "median")])
-        #     .iloc[0]["architecture_id"]
-        #     .item()
-        # )
-
-        # pmlps_df = pmlps_df.loc[pmlps_df["architecture_id"] == best_arch_id]
-        pareto_variables_list = [
-            ("num_neurons", agg),
-            ("monitored_metric", agg),
-            ("monitored_metric", "std"),
-            ("validation_matthews_corrcoef", agg),
-            ("validation_matthews_corrcoef", "std"),
-            ("loss", agg),
-            ("loss", "std"),
-        ]
-        pareto_variables = grouped_pmlps[pareto_variables_list].to_numpy()
-        pareto_variables *= np.array(
-            [1, -1, 1, -1, 1, 1, 1]
-        )  # is_pareto_efficient works with minimization problems.
-        grouped_pmlps["dominant_solution"] = helpers.is_pareto_efficient(
-            pareto_variables
-        )
-
-        pareto_grouped_pmlps = grouped_pmlps[grouped_pmlps["dominant_solution"]]
-        pareto_grouped_pmlps.to_csv(
-            f"pareto_grouped_pmlps_{self.current_layer_index}.csv",
-            float_format="{:f}".format,
-        )
-
-        if self.pareto_frontier:
-            print("pareto_grouped_pmlps:")
-            print(pareto_grouped_pmlps)
-            ranked_pmlps_df = pareto_grouped_pmlps
-        else:
-            print("grouped_pmlps:")
-            print(grouped_pmlps)
-            ranked_pmlps_df = grouped_pmlps
-
-        grouped_pmlps.to_csv(
-            f"grouped_pmlps_{self.current_layer_index}.csv",
-            float_format="{:f}".format,
-        )
-
-        # TODO: uncomment
-        ranked_pmlps_df = self.get_ranked_pmlps_df(
-            grouped_pmlps,
-            mcdm_tuples,
-            # theoretical_best=theoretical_best,
-            # theoretical_worst=theoretical_worst,
-            theoretical_best=None,
-            theoretical_worst=None,
-            only_pareto_solutions=False,
-            sort_by_rank=False,
-        )
-        # ranked_pmlps_df.to_csv(
-        #     f"ranked_pmlps_{self.current_layer_index}.csv",
-        #     float_format="{:f}".format,
-        # )
-
-        # all_ranked_pmlps_df = self.get_ranked_pmlps_df(
-        #     grouped_pmlps,
-        #     mcdm_tuples,
-        #     # theoretical_best=theoretical_best,
-        #     # theoretical_worst=theoretical_worst,
-        #     theoretical_best=None,
-        #     theoretical_worst=None,
-        #     only_pareto_solutions=False,
-        # )
-        # all_ranked_pmlps_df.to_csv(
-        #     f"all_ranked_pmlps_{self.current_layer_index}.csv",
-        #     float_format="{:f}".format,
-        # )
-
-        # TODO:change here to use rank
-        # pmlps_df = pmlps_df.sort_values(
-        #     by=["metrics"], ascending=True
-        # ).reset_index()
-
-        #
-        # most_difficult_repetition_df = (
-        #     pmlps_df.groupby(["repetition"])
-        #     .agg([agg, "std"])
-        #     .sort_values(
-        #         by=[("monitored_metric", agg), ("monitored_metric", "std")],
-        #         ascending=["True", "True"],
-        #     )
-        #     .reset_index()
-        # )
-        # most_difficult_repetition = most_difficult_repetition_df.iloc[0][
-        #     "repetition"
-        # ].item()
-        # print(f"Most difficult repetition df:{most_difficult_repetition_df}")
-        # print(f"Most difficult repetition (kfold): {most_difficult_repetition}")
-
-        topk_architecture = min(self.topk_architecture, ranked_pmlps_df.shape[0])
-
-        # ranked_pmlps_df = ranked_pmlps_df.iloc[:topk_architecture]
-
-        print("ranked_pmlps_df")
-        print(ranked_pmlps_df)
-        ranked_pmlps_df.to_csv(
-            f"ranked_pmlps_{self.current_layer_index}.csv",
-            float_format="{:f}".format,
-        )
-
-        min_metric = ranked_pmlps_df.iloc[:topk_architecture][
-            "holdout_overall_acc"
-        ].max()
-        print(f"min_metric: {min_metric}")
-        ranked_pmlps_df = ranked_pmlps_df[
-            ranked_pmlps_df[("holdout_overall_acc", agg)] >= min_metric[agg]
-        ]
-
-        best_arch_id = ranked_pmlps_df["architecture_id"]["mean"]
-        print(f"Best architecture id: {best_arch_id}")
-
-        # if self.pareto_frontier:
-        #     pmlps_df = pmlps_df[pmlps_df["dominant_solution"]].sort_values(
-        #         by=["monitored_metric", "loss"],
-        #         ascending=[False, True],
-        #     )
-        # else:
-        pmlps_df = pmlps_df[pmlps_df["architecture_id"].isin(best_arch_id)]
-        # pmlps_df["train_validation_gap"] = (
-        #     pmlps_df[f"train_{self.monitored_metric}"]
-        #     - pmlps_df[f"validation_{self.monitored_metric}"]
-        # )
-
-        pmlps_df = pmlps_df.sort_values(
-            # by="validation_matthews_corrcoef", ascending=False
-            # by=["monitored_metric", "loss"],
-            # ascending=[False, True],
-            # by=["train_validation_gap"],
-            # ascending=[False],
-            by=["holdout_overall_acc", "num_neurons"],
-            ascending=[False, True],
-        )
-        print("-- pmlps_df")
-        print(pmlps_df.head())
-
-        # pareto_variables_list = [
-        #     "num_neurons",
-        #     "monitored_metric",
-        #     "validation_matthews_corrcoef",
-        #     "loss",
-        # ]
-        # pareto_variables = pmlps_df[pareto_variables_list].to_numpy()
-        # pareto_variables *= np.array(
-        #     [1, -1, -1, 1]
-        # )  # is_pareto_efficient works with minimization problems.
-        # pmlps_df["dominant_solution"] = helpers.is_pareto_efficient(pareto_variables)
-        # print("-- pmlps_df dominant_solution")
-        # print(pmlps_df)
-
-        # pmlps_df = pmlps_df[pmlps_df["dominant_solution"]]
-
-        # pmlps_df = pmlps_df[pmlps_df["repetition"] == most_difficult_repetition]
-
-        topk = min(self.topk, pmlps_df.shape[0])
-        chosen_df = pmlps_df.iloc[:topk, :].reset_index()
-        chosen_model_ids = chosen_df["model_id"].tolist()
+        chosen_df, chosen_model_ids = self.choose_model_ids(pmlps_df)
         # best_mlps = [e[1] for e in pareto_mlps if e[0] in chosen_model_ids]
         best_mlps = []
         for model_id in chosen_model_ids:
@@ -1044,6 +833,139 @@ class AutoConstructiveModel(nn.Module):
             chosen_df,
         )
 
+    def choose_model_ids(self, pmlps_df):
+        agg = "mean"
+
+        # architecture_counters = {i: 0 for i in pmlps_df["architecture_id"]}
+        # for arch_id in pmlps_df["architecture_id"]:
+        #     architecture_counters[arch_id] += 1
+        #     if architecture_counters[arch_id] == self.repetitions:
+        #         best_arch_id = arch_id
+        #         break
+        # pmlps_df["best_arch_id"] = pmlps_df["architecture_id"] == best_arch_id
+
+        grouped_pmlps = (
+            pmlps_df.groupby(["architecture_id"])[
+                list(set(pmlps_df.columns).difference({"activation_name"}))
+            ]
+            .agg([agg, "std"])
+            .sort_values(
+                by=[
+                    # ("monitored_metric", agg),
+                    ("holdout_overall_acc", agg),
+                    # ("monitored_metric", "std"),
+                    ("num_neurons", agg),
+                ],
+                ascending=[False, True],
+            )
+        ).reset_index()
+
+        grouped_pmlps.to_csv(
+            f"grouped_pmlps_{self.current_layer_index}.csv",
+            float_format="{:f}".format,
+        )
+
+        pareto_variables = pmlps_df[
+            ["num_neurons", "holdout_overall_acc", "epoch"]
+        ].to_numpy()
+        pareto_variables *= np.array(
+            [1, -1, -1]
+        )  # is_pareto_efficient works with minimization problems.
+        pmlps_df["dominant_solution"] = helpers.is_pareto_efficient(pareto_variables)
+        pmlps_df["mean_diffs"] = (
+            (
+                (
+                    abs(pmlps_df["holdout_overall_acc"] - pmlps_df["train_overall_acc"])
+                    + abs(
+                        pmlps_df["holdout_overall_acc"]
+                        - pmlps_df["validation_overall_acc"]
+                    )
+                    + abs(
+                        pmlps_df["train_overall_acc"]
+                        - pmlps_df["validation_overall_acc"]
+                    )
+                )
+                / 3
+            )
+            + (
+                abs(
+                    pmlps_df["holdout_matthews_corrcoef"]
+                    - pmlps_df["train_matthews_corrcoef"]
+                )
+                + abs(
+                    pmlps_df["holdout_matthews_corrcoef"]
+                    - pmlps_df["validation_matthews_corrcoef"]
+                )
+                + abs(
+                    pmlps_df["train_matthews_corrcoef"]
+                    - pmlps_df["validation_matthews_corrcoef"]
+                )
+            )
+            / 3
+        ) / 2
+
+        pmlps_df = pmlps_df.sort_values(
+            by=["mean_diffs", "num_neurons", "holdout_overall_acc"],
+            ascending=[True, True, False],
+        )
+        pmlps_df.to_csv(
+            f"pmlps_{self.current_layer_index}.csv",
+            float_format="{:f}".format,
+        )
+
+        pmlps_df = pmlps_df[
+            (pmlps_df["epoch"] >= 5) & (pmlps_df["holdout_matthews_corrcoef"] > 0.05)
+        ]
+        pmlps_df.to_csv(
+            f"pmlps_after_filtering_{self.current_layer_index}.csv",
+            float_format="{:f}".format,
+        )
+        # pmlps_df = pmlps_df[pmlps_df["dominant_solution"]]
+
+        # name, value, best, worst
+        mcdm_tuples = [
+            ("num_neurons", -1),
+            ("epoch", 1),
+            ("holdout_overall_acc", 1),
+            # (("num_neurons", agg), -1),
+            # (("num_epochs", agg), 1),
+            # (("holdout_overall_acc", agg), 1),
+            # (("holdout_overall_acc", "std"), -1),
+            # (("loss", "median"), -1, 0, 1),
+            # (("loss", "std"), -1, 0, 1),
+            # (("loss", "std"), -1, None, None),
+        ]
+        ranked_pmlps_df_only_pareto = self.get_ranked_pmlps_df(
+            pmlps_df, mcdm_tuples, only_pareto_solutions=True
+        )
+        ranked_pmlps_df_only_pareto.to_csv(
+            f"ranked_pmlps_df_only_pareto_{self.current_layer_index}.csv"
+        )
+        ranked_pmlps_df = self.get_ranked_pmlps_df(
+            pmlps_df, mcdm_tuples, only_pareto_solutions=False
+        )
+        ranked_pmlps_df.to_csv(f"ranked_pmlps_df_{self.current_layer_index}.csv")
+
+        if self.pareto_frontier:
+            ranked_pmlps_df = ranked_pmlps_df_only_pareto
+
+        # Get top 1% num_neurons
+        ranked_pmlps_df = ranked_pmlps_df.iloc[: int(ranked_pmlps_df.shape[0] * 0.01)]
+        ranked_pmlps_df = ranked_pmlps_df.sort_values(
+            by=["num_neurons", "holdout_overall_acc", "epoch"],
+            ascending=[True, False, False],
+        )
+        ranked_pmlps_df.to_csv(
+            f"top_ranked_pmlps_df_{self.current_layer_index}.csv",
+            float_format="{:f}".format,
+        )
+        print(f"ranked_pmlps_df top 0.01: {ranked_pmlps_df.head(10)}")
+
+        topk = min(self.topk, ranked_pmlps_df.shape[0])
+        chosen_df = ranked_pmlps_df.iloc[:topk, :].reset_index()
+        chosen_model_ids = chosen_df["model_id"].tolist()
+        return chosen_df, chosen_model_ids
+
     def assess_mlps(self, pareto_mlps, ranked_pmlps_df, dataloader_name):
         with torch.inference_mode():
             if dataloader_name == "validation":
@@ -1080,10 +1002,10 @@ class AutoConstructiveModel(nn.Module):
         self,
         pmlps_df,
         mcdm_tuples,
-        theoretical_best,
-        theoretical_worst,
+        theoretical_best=None,
+        theoretical_worst=None,
         only_pareto_solutions=True,
-        sort_by_rank=True,
+        sort_by_rank=False,
     ):
 
         mcdm_keys = [k[0] for k in mcdm_tuples]
@@ -1093,9 +1015,9 @@ class AutoConstructiveModel(nn.Module):
 
         decision_matrix = pmlps_df[mcdm_keys].to_numpy()
 
+        pareto_mask = helpers.is_pareto_efficient(decision_matrix)
+        pmlps_df["dominant_solution"] = pareto_mask
         if only_pareto_solutions:
-            pareto_mask = helpers.is_pareto_efficient(decision_matrix)
-            pmlps_df["dominant_solution"] = pareto_mask
             pmlps_df = pmlps_df.loc[pareto_mask]
             decision_matrix = pmlps_df[mcdm_keys].to_numpy()
 
