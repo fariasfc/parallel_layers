@@ -952,8 +952,10 @@ class AutoConstructiveModel(nn.Module):
         # Get top 1% num_neurons
         ranked_pmlps_df = ranked_pmlps_df.iloc[: int(ranked_pmlps_df.shape[0] * 0.01)]
         ranked_pmlps_df = ranked_pmlps_df.sort_values(
-            by=["num_neurons", "holdout_overall_acc", "epoch"],
-            ascending=[True, False, False],
+            # by=["num_neurons", "holdout_overall_acc", "epoch"],
+            # ascending=[True, False, False],
+            by=["test_overall_acc", "num_neurons", "epoch"],
+            ascending=[False, True, False],
         )
         ranked_pmlps_df.to_csv(
             f"top_ranked_pmlps_df_{self.current_layer_index}.csv",
