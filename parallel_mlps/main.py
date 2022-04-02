@@ -81,6 +81,7 @@ def main(cfg: AutoConstructiveConfig) -> None:
     if cfg.training.distance_name is None:
         splits = dl.get_splits_iter(
             validation_rate_from_train=cfg.training.validation_rate_from_train,
+            fixed_test=True,
         )
     else:
 

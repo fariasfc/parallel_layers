@@ -1,4 +1,5 @@
 import logging
+import itertools
 import pickle
 import re
 from copy import deepcopy
@@ -522,11 +523,90 @@ class Dataloader:
             # data['val']['data'] = x_tmp[val_index]
             # data['val']['target'] = self.one_hot_encoder.transform(y_tmp[val_index])
 
-    def get_splits_iter(self, validation_rate_from_train=None):
+    def get_splits_iter(self, validation_rate_from_train=None, fixed_test=False):
         data = {"train": {}, "test": {}}
+        folds = []
+        test_index = None
+        folds__ids = []
+        if fixed_test:
+            if validation_rate_from_train != -1:
+                raise NotImplementedError(
+                    "validation rate from train not implemented for fixed_test in no sbss regime."
+                )
+            for i, (train_val_index, tmp_test_index) in enumerate(
+                self.skf.split(self.x, self.y)
+            ):
+                folds.append(tmp_test_index)
+                folds__ids.append(np.zeros_like(tmp_test_index) + i)
+
+            test_index = folds[-1]
+            folds = folds[:-1]
+            data["folds"] = folds
+            self.n_splits = self.n_splits - 1
+            data["test"]["data"] = self.x[test_index]
+            data["test"]["target"] = self.y[test_index]
+            data["test"]["index"] = test_index
+
+            for split in range(self.n_splits):
+                data["test"]["current_fold"] = split
+                train_splits = np.ones(self.n_splits).astype(np.bool)
+                train_splits[split] = False
+                # train_index = folds[train_splits].ravel()
+                train_index = np.array(
+                    list(
+                        itertools.chain.from_iterable(
+                            [
+                                folds[i].tolist()
+                                for i in range(len(folds))
+                                if train_splits[i]
+                            ]
+                        )
+                    )
+                )
+                # train_val_index = folds[train_splits, :]
+                # train_val_index_ravel = train_val_index.ravel()
+
+                # data["train"]["data"] = self.x[train_val_index_ravel]
+                # data["train"]["target"] = self.y[train_val_index_ravel]
+                # val_index = folds[~train_splits].ravel()
+                val_index = np.array(
+                    list(
+                        itertools.chain.from_iterable(
+                            [
+                                folds[i].tolist()
+                                for i in range(len(folds))
+                                if not train_splits[i]
+                            ]
+                        )
+                    )
+                ).ravel()
+                data["train"]["data"] = self.x[train_index]
+                data["train"]["target"] = self.y[train_index]
+                # data["train"]["fold_id"] = folds__ids
+                data["train"]["fold_id"] = np.array(
+                    list(
+                        itertools.chain.from_iterable(
+                            [
+                                folds__ids[i].tolist()
+                                for i in range(len(folds))
+                                if train_splits[i]
+                            ]
+                        )
+                    )
+                )
+
+                data["val"] = {}
+                data["val"]["data"] = self.x[val_index]
+                data["val"]["target"] = self.y[val_index]
+
+                yield data
+
+            return None
+
         for i, (train_val_index, test_index) in enumerate(
             self.skf.split(self.x, self.y)
         ):
+
             data["test"]["data"] = self.x[test_index]
             data["test"]["target"] = self.y[test_index]
 
