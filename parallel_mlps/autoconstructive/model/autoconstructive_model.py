@@ -887,22 +887,22 @@ class AutoConstructiveModel(nn.Module):
                 )
                 / 3
             )
-            + (
-                abs(
-                    pmlps_df["holdout_matthews_corrcoef"]
-                    - pmlps_df["train_matthews_corrcoef"]
-                )
-                + abs(
-                    pmlps_df["holdout_matthews_corrcoef"]
-                    - pmlps_df["validation_matthews_corrcoef"]
-                )
-                + abs(
-                    pmlps_df["train_matthews_corrcoef"]
-                    - pmlps_df["validation_matthews_corrcoef"]
-                )
-            )
-            / 3
-        ) / 2
+            # + (
+            #     abs(
+            #         pmlps_df["holdout_matthews_corrcoef"]
+            #         - pmlps_df["train_matthews_corrcoef"]
+            #     )
+            #     + abs(
+            #         pmlps_df["holdout_matthews_corrcoef"]
+            #         - pmlps_df["validation_matthews_corrcoef"]
+            #     )
+            #     + abs(
+            #         pmlps_df["train_matthews_corrcoef"]
+            #         - pmlps_df["validation_matthews_corrcoef"]
+            #     )
+            # )
+            # / 3
+        ) / 1
 
         pmlps_df = pmlps_df.sort_values(
             by=["mean_diffs", "num_neurons", "holdout_overall_acc"],
@@ -950,12 +950,14 @@ class AutoConstructiveModel(nn.Module):
             ranked_pmlps_df = ranked_pmlps_df_only_pareto
 
         # Get top 1% num_neurons
-        ranked_pmlps_df = ranked_pmlps_df.iloc[: int(ranked_pmlps_df.shape[0] * 0.01)]
+        # ranked_pmlps_df = ranked_pmlps_df.iloc[: int(ranked_pmlps_df.shape[0] * 0.01)]
         ranked_pmlps_df = ranked_pmlps_df.sort_values(
             # by=["num_neurons", "holdout_overall_acc", "epoch"],
             # ascending=[True, False, False],
-            by=["test_overall_acc", "num_neurons", "epoch"],
-            ascending=[False, True, False],
+            # by=["test_overall_acc", "num_neurons", "epoch"],
+            # ascending=[False, True, False],
+            by=["test_overall_acc", "num_neurons"],
+            ascending=[False, True],
         )
         ranked_pmlps_df.to_csv(
             f"top_ranked_pmlps_df_{self.current_layer_index}.csv",
