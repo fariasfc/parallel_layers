@@ -956,7 +956,8 @@ class AutoConstructiveModel(nn.Module):
             # ascending=[True, False, False],
             # by=["test_overall_acc", "num_neurons", "epoch"],
             # ascending=[False, True, False],
-            by=["test_overall_acc", "num_neurons"],
+            # by=["test_overall_acc", "num_neurons"],
+            by=["holdout_overall_acc", "num_neurons"],
             ascending=[False, True],
         )
         ranked_pmlps_df.to_csv(
