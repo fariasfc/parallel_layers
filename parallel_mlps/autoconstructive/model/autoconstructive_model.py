@@ -950,7 +950,7 @@ class AutoConstructiveModel(nn.Module):
             ranked_pmlps_df = ranked_pmlps_df_only_pareto
 
         # Get top 1% num_neurons
-        # ranked_pmlps_df = ranked_pmlps_df.iloc[: int(ranked_pmlps_df.shape[0] * 0.01)]
+        ranked_pmlps_df = ranked_pmlps_df.iloc[: int(ranked_pmlps_df.shape[0] * 0.01)]
         ranked_pmlps_df = ranked_pmlps_df.sort_values(
             # by=["num_neurons", "holdout_overall_acc", "epoch"],
             # ascending=[True, False, False],
@@ -958,7 +958,8 @@ class AutoConstructiveModel(nn.Module):
             # ascending=[False, True, False],
             # by=["test_overall_acc", "num_neurons"], # politica 1
             # by=["holdout_overall_acc", "num_neurons"], # politica 2
-            by=["validation_overall_acc", "num_neurons"],  # politica 2
+            # by=["validation_overall_acc", "num_neurons"],  # politica 3
+            by=["holdout_overall_acc", "num_neurons"],  # politica 4
             ascending=[False, True],
         )
         ranked_pmlps_df.to_csv(
