@@ -57,6 +57,7 @@ model:
     loss_rel_tol: 0.01
     min_improvement: 0.01
     device: "cuda"
+    chosen_policy: policy1
 
 hydra:
     sweep:

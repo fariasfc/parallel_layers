@@ -188,6 +188,7 @@ class AutoConstructiveModel(nn.Module):
         loss_rel_tol: float = 0.05,
         min_improvement: float = 0.001,
         device: str = "cuda",
+        chosen_policy: str = "",
         random_state: int = 0,
         logger: Any = None,
         debug_test: bool = False,
@@ -230,6 +231,7 @@ class AutoConstructiveModel(nn.Module):
         self.strategy_select_best = strategy_select_best
         self.loss_rel_tol = loss_rel_tol
         self.min_improvement = min_improvement
+        self.chosen_policy = chosen_policy
         self.debug_test = debug_test
         self.reset_exhausted_models = reset_exhausted_models
 
@@ -946,6 +948,32 @@ class AutoConstructiveModel(nn.Module):
         )
         ranked_pmlps_df.to_csv(f"ranked_pmlps_df_{self.current_layer_index}.csv")
 
+        if self.chosen_policy == "policy1":
+            ranked_pmlps_df = ranked_pmlps_df.sort_values(
+                by=["test_overall_acc", "num_neurons"],
+                ascending=[False, True],
+            )
+        elif self.chosen_policy == "policy2":
+            ranked_pmlps_df = ranked_pmlps_df.sort_values(
+                by=["holdout_overall_acc", "num_neurons"],
+                ascending=[False, True],
+            )
+        elif self.chosen_policy == "policy3":
+            ranked_pmlps_df = ranked_pmlps_df.sort_values(
+                by=["validation_overall_acc", "num_neurons"],
+                ascending=[False, True],
+            )
+        elif self.chosen_policy == "policy4":
+            ranked_pmlps_df = ranked_pmlps_df.iloc[
+                : int(ranked_pmlps_df.shape[0] * 0.01)
+            ]
+            ranked_pmlps_df = ranked_pmlps_df.sort_values(
+                by=["holdout_overall_acc", "num_neurons"],
+                ascending=[False, True],
+            )
+        else:
+            raise RuntimeError(f"chosen_policy {self.chosen_policy} not implemented.")
+
         # if self.pareto_frontier:
         #     ranked_pmlps_df = ranked_pmlps_df_only_pareto
 
@@ -1017,8 +1045,8 @@ class AutoConstructiveModel(nn.Module):
 
         mcdm_keys = [k[0] for k in mcdm_tuples]
 
-        types = [k[1] for k in mcdm_tuples]
-        mcdm_method = pymcdm.methods.TOPSIS(pymcdm.normalizations.minmax_normalization)
+        # types = [k[1] for k in mcdm_tuples]
+        # mcdm_method = pymcdm.methods.TOPSIS(pymcdm.normalizations.minmax_normalization)
 
         decision_matrix = pmlps_df[mcdm_keys].to_numpy()
 

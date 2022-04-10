@@ -62,6 +62,7 @@ class ModelConfig:
     loss_rel_tol: float
     min_improvement: float
     device: str
+    chosen_policy: str
 
 
 @dataclass

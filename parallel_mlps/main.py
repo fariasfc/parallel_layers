@@ -153,6 +153,7 @@ def run_single_experiment(data: Dict, cfg: AutoConstructiveConfig, logger: Any):
         loss_rel_tol=cfg.model.loss_rel_tol,
         min_improvement=cfg.model.min_improvement,
         device=cfg.model.device,
+        chosen_policy=cfg.model.chosen_policy,
         random_state=random_state,
         logger=logger,
         debug_test=cfg.training.debug_test,
