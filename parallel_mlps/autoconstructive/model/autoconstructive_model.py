@@ -935,19 +935,19 @@ class AutoConstructiveModel(nn.Module):
             # (("loss", "std"), -1, 0, 1),
             # (("loss", "std"), -1, None, None),
         ]
-        ranked_pmlps_df_only_pareto = self.get_ranked_pmlps_df(
-            pmlps_df, mcdm_tuples, only_pareto_solutions=True
-        )
-        ranked_pmlps_df_only_pareto.to_csv(
-            f"ranked_pmlps_df_only_pareto_{self.current_layer_index}.csv"
-        )
+        # ranked_pmlps_df_only_pareto = self.get_ranked_pmlps_df(
+        #     pmlps_df, mcdm_tuples, only_pareto_solutions=True
+        # )
+        # ranked_pmlps_df_only_pareto.to_csv(
+        #     f"ranked_pmlps_df_only_pareto_{self.current_layer_index}.csv"
+        # )
         ranked_pmlps_df = self.get_ranked_pmlps_df(
             pmlps_df, mcdm_tuples, only_pareto_solutions=False
         )
         ranked_pmlps_df.to_csv(f"ranked_pmlps_df_{self.current_layer_index}.csv")
 
-        if self.pareto_frontier:
-            ranked_pmlps_df = ranked_pmlps_df_only_pareto
+        # if self.pareto_frontier:
+        #     ranked_pmlps_df = ranked_pmlps_df_only_pareto
 
         # Get top 1% num_neurons
         # ranked_pmlps_df = ranked_pmlps_df.iloc[: int(ranked_pmlps_df.shape[0] * 0.01)]
@@ -1013,6 +1013,8 @@ class AutoConstructiveModel(nn.Module):
         sort_by_rank=False,
     ):
 
+        pmlps_df = pmlps_df.copy()
+
         mcdm_keys = [k[0] for k in mcdm_tuples]
 
         types = [k[1] for k in mcdm_tuples]
@@ -1035,17 +1037,17 @@ class AutoConstructiveModel(nn.Module):
                 (decision_matrix, theoretical_best, theoretical_worst)
             )
 
-        if self.mcdm_weights is not None:
-            weights = np.array(self.mcdm_weights)
-        else:
-            weights = pymcdm.weights.equal_weights(decision_matrix)
-        # weights = np.array([0.5, 0.4, 0.1])
-        ranks = mcdm_method(decision_matrix, weights, types)
+        # if self.mcdm_weights is not None:
+        #     weights = np.array(self.mcdm_weights)
+        # else:
+        #     weights = pymcdm.weights.equal_weights(decision_matrix)
+        # # weights = np.array([0.5, 0.4, 0.1])
+        # ranks = mcdm_method(decision_matrix, weights, types)
         # removing best_and_worst_theoretical_mlps
-        if theoretical_best is not None:
-            ranks = ranks[:-2]
+        # if theoretical_best is not None:
+        #     ranks = ranks[:-2]
 
-        pmlps_df["rank"] = ranks
+        pmlps_df["rank"] = -999
 
         if sort_by_rank:
             pmlps_df = pmlps_df.sort_values(by=["rank"], ascending=False).reset_index()
