@@ -915,9 +915,12 @@ class AutoConstructiveModel(nn.Module):
             float_format="{:f}".format,
         )
 
-        pmlps_df = pmlps_df[
+        filtered_pmlps_df = pmlps_df[
             (pmlps_df["epoch"] >= 5) & (pmlps_df["holdout_matthews_corrcoef"] > 0.05)
         ]
+        if filtered_pmlps_df.shape[0] >= self.topk:
+            pmlps_df = filtered_pmlps_df
+
         pmlps_df.to_csv(
             f"pmlps_after_filtering_{self.current_layer_index}.csv",
             float_format="{:f}".format,
