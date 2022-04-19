@@ -16,12 +16,12 @@ class Objective:
         name: str,
         objective: ObjectiveEnum = ObjectiveEnum.MINIMIZATION,
         reduction_fn: str = None,
-        min_relative_improvement: float = 0.0,
+        min_improvement: float = 0.0,
     ) -> None:
         self.name = name
         self.objective = objective
         self.reduction_fn = reduction_fn
-        self.min_relative_improvement = min_relative_improvement
+        self.min_improvement = min_improvement
 
         self.tensors = []
         self.masks = []
@@ -122,10 +122,12 @@ class Objective:
         #     self._improved = self.current_reduction < self.best
         else:
             _, self._improved = helpers.has_improved(
-                self.current_reduction,
-                self.best,
-                self.min_relative_improvement,
-                self.objective,
+                current_epoch_best_metric=self.current_reduction,
+                global_best_metric=self.best,
+                min_improvement=self.min_improvement,
+                objective_enum=self.objective,
+                strategy="absolute_improvement",
+                logger=None,
             )
 
         if torch.any(self._improved):

@@ -164,6 +164,7 @@ class AutoConstructiveModel(nn.Module):
         input_perturbation: Optional[str],
         regularization_gamma: Optional[float],
         monitored_metric: str,
+        monitored_metric_add_layers: str,
         monitored_objective: ObjectiveEnum,
         pareto_frontier: bool,
         find_num_neurons_first: bool,
@@ -187,6 +188,7 @@ class AutoConstructiveModel(nn.Module):
         strategy_select_best: str = "architecture_median_best",
         loss_rel_tol: float = 0.05,
         min_improvement: float = 0.001,
+        improvement_strategy: str = "absolute_improvement",  # "percentage_improvement"
         device: str = "cuda",
         chosen_policy: str = "",
         random_state: int = 0,
@@ -207,6 +209,7 @@ class AutoConstructiveModel(nn.Module):
         self.input_perturbation = input_perturbation
         self.regularization_gamma = regularization_gamma
         self.monitored_metric = monitored_metric
+        self.monitored_metric_add_layers = monitored_metric_add_layers
         self.monitored_objective = monitored_objective
         self.pareto_frontier = pareto_frontier
         self.find_num_neurons_first = find_num_neurons_first
@@ -231,6 +234,7 @@ class AutoConstructiveModel(nn.Module):
         self.strategy_select_best = strategy_select_best
         self.loss_rel_tol = loss_rel_tol
         self.min_improvement = min_improvement
+        self.improvement_strategy = improvement_strategy
         self.chosen_policy = chosen_policy
         self.debug_test = debug_test
         self.reset_exhausted_models = reset_exhausted_models
@@ -455,7 +459,7 @@ class AutoConstructiveModel(nn.Module):
 
         accumulators = {
             "train_loss": Objective(
-                "train_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None
+                "train_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None,
             ),
             "validation_loss": Objective(
                 "validation_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None
@@ -815,7 +819,7 @@ class AutoConstructiveModel(nn.Module):
 
         # best_mlps = [mlps[model_id] for model_id in chosen_model_ids]
 
-        metrics_max = torch.tensor(chosen_df["monitored_metric"].max())
+        metrics_max = torch.tensor(chosen_df[self.monitored_metric_add_layers].max())
 
         print("Chosen df:")
         print(chosen_df)
@@ -1715,23 +1719,16 @@ class AutoConstructiveModel(nn.Module):
                     .unsqueeze(-1)
                     .to(self.device)
                 )
-                percentage_best_metric = None
+                comparison_best_metric = None
             else:
-                percentage_best_metric, better_model = helpers.has_improved(
-                    current_best_metric.to(self.device),
-                    global_best_metric,
-                    self.min_improvement,
-                    objective,
-                    eps,
-                )
-
-            if objective == ObjectiveEnum.MINIMIZATION:
-                self.logger.info(
-                    f"percentage_best_metric({percentage_best_metric}) = current_best_metric({current_best_metric})/global_best_metric({global_best_metric}) < {1-self.min_improvement} (={better_model})."
-                )
-            else:
-                self.logger.info(
-                    f"percentage_best_metric({percentage_best_metric}) = current_best_metric({current_best_metric})/global_best_metric({global_best_metric}) > {1+self.min_improvement} (={better_model})."
+                comparison_best_metric, better_model = helpers.has_improved(
+                    current_epoch_best_metric=current_best_metric.to(self.device),
+                    global_best_metric=global_best_metric,
+                    min_improvement=self.min_improvement,
+                    objective_enum=objective,
+                    strategy=self.improvement_strategy,
+                    logger=self.logger,
+                    eps=eps,
                 )
 
             if better_model:

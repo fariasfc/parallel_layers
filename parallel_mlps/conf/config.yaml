@@ -16,6 +16,7 @@ training:
     input_perturbation_strategy: null #sqrt #random_sparsity0.1 #sqrt
     regularization_gamma: 1e-4
     monitored_metric: "overall_acc" #"matthews_corrcoef" #"overall_acc" #"validation_loss" #
+    monitored_metric_add_layers: "holdout_overall_acc"
     monitored_objective: "MAXIMIZATION"
     pareto_frontier: false
 
@@ -55,7 +56,8 @@ model:
     global_patience: 2
     transform_data_strategy: no_strategy # append_original_input
     loss_rel_tol: 0.01
-    min_improvement: 0.01
+    min_improvement: 0.001
+    improvement_strategy: "absolute_improvement" # "percentage_improvement"
     device: "cuda"
     chosen_policy: policy1
 

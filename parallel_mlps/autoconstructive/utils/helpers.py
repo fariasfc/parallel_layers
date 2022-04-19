@@ -47,8 +47,10 @@ def is_pareto_efficient(costs, return_mask=True):
 def has_improved(
     current_epoch_best_metric,
     global_best_metric,
-    min_relative_improvement,
+    min_improvement,
     objective_enum=ObjectiveEnum.MINIMIZATION,
+    strategy="relative_improvement",
+    logger=None,
     eps=1e-5,
 ):
     """Verify if the current_best_losses is better than global_best_losses given a min_relative_improvement.
@@ -70,14 +72,33 @@ def has_improved(
             .to(current_epoch_best_metric.device)
         )
 
-    percentage_of_best_loss = current_epoch_best_metric / (global_best_metric + eps)
+    if strategy == "relative_improvement":
+        comparison_metric = current_epoch_best_metric / (global_best_metric + eps)
+    elif strategy == "absolute_improvement":
+        comparison_metric = current_epoch_best_metric - global_best_metric
+
+    log_str = f"comparison_metric({comparison_metric}) = current_epoch_best_metric({current_epoch_best_metric})"
 
     if objective_enum == ObjectiveEnum.MINIMIZATION:
-        better_models_mask = percentage_of_best_loss < (1 - min_relative_improvement)
-    else:
-        better_models_mask = percentage_of_best_loss > (1 + min_relative_improvement)
+        if strategy == "relative_improvement":
+            better_models_mask = comparison_metric < (1 - min_improvement)
+            log_str += f"/global_best_metric({global_best_metric}) < {1-min_improvement} (={better_models_mask})"
+        elif strategy == "absolute_improvement":
+            better_models_mask = comparison_metric < -min_improvement
+            log_str += f"-global_best_metric({global_best_metric}) < {min_improvement} (={better_models_mask})"
 
-    return percentage_of_best_loss, better_models_mask
+    else:
+        if strategy == "relative_improvement":
+            better_models_mask = comparison_metric > (1 + min_improvement)
+            log_str += f"/global_best_metric({global_best_metric}) > {1+min_improvement} (={better_models_mask})"
+        elif strategy == "absolute_improvement":
+            better_models_mask = comparison_metric > min_improvement
+            log_str += f"-global_best_metric({global_best_metric}) > {min_improvement} (={better_models_mask})"
+
+    if logger is not None:
+        logger.info(log_str)
+
+    return comparison_metric, better_models_mask
 
 
 def select_top_k(monitored_metric, better_models_mask, best_k):

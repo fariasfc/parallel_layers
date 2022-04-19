@@ -30,6 +30,7 @@ class TrainingConfig:
     input_perturbation_strategy: Optional[str]
     regularization_gamma: Optional[float]
     monitored_metric: str
+    monitored_metric_add_layers: str
     monitored_objective: ObjectiveEnum
     pareto_frontier: bool
     find_num_neurons_first: bool
@@ -61,6 +62,7 @@ class ModelConfig:
     strategy_select_best: str
     loss_rel_tol: float
     min_improvement: float
+    improvement_strategy: str
     device: str
     chosen_policy: str
 
