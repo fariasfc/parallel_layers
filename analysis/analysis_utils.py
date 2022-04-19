@@ -88,6 +88,10 @@ def wilcoxon_tests(df, metric):
                             ]
                             if df1.shape[0] < 2 or df2.shape[0] < 2:
                                 continue
+
+                            if df1.shape[0] != df2.shape[0]:
+                                continue
+
                             g1_over_g2 = "d"
                             stat = 999
                             p = 999
@@ -95,6 +99,11 @@ def wilcoxon_tests(df, metric):
                             values1 = df1["value"].to_numpy()
                             values2 = df2["value"].to_numpy()
 
+                            wilcoxon_result = {
+                                "wilcoxon_l": 0,
+                                "wilcoxon_d": 0,
+                                "wilcoxon_w": 0,
+                            }
                             if any(values1 != values2):
                                 stat, p = wilcoxon(values1, values2)
                             if p < 0.05:
@@ -102,22 +111,25 @@ def wilcoxon_tests(df, metric):
                                     g1_over_g2 = "w"
                                 else:
                                     g1_over_g2 = "l"
+                            wilcoxon_result[f"wilcoxon_{g1_over_g2}"] = 1
                             results.append(
                                 {
-                                    "project": project,
-                                    "dataset_name": dataset_name,
-                                    "g1_count": len(values1),
-                                    "g1": g1,
-                                    "g1_mean": values1.mean(),
-                                    "g1_std": values1.std(),
-                                    "g2_count": len(values2),
-                                    "g2": g2,
-                                    "g2_mean": values2.mean(),
-                                    "g2_std": values2.std(),
-                                    "wilcoxon_result": g1_over_g2,
-                                    "statistic": stat,
-                                    "p-value": p,
-                                }
+                                    **{
+                                        "project": project,
+                                        "dataset_name": dataset_name,
+                                        "g1_count": len(values1),
+                                        "g1": g1,
+                                        "g1_mean": values1.mean(),
+                                        "g1_std": values1.std(),
+                                        "g2_count": len(values2),
+                                        "g2": g2,
+                                        "g2_mean": values2.mean(),
+                                        "g2_std": values2.std(),
+                                        "statistic": stat,
+                                        "p-value": p,
+                                    },
+                                    **wilcoxon_result,
+                                },
                             )
     df = pd.DataFrame(
         results,
@@ -132,12 +144,101 @@ def wilcoxon_tests(df, metric):
             "g2",
             "g2_mean",
             "g2_std",
-            "wilcoxon_result",
             "statistic",
             "p-value",
+            "wilcoxon_l",
+            "wilcoxon_d",
+            "wilcoxon_w",
         ],
     )
-    df = df.sort_values(["g1", "dataset_name", "wilcoxon_result"])
+    df = df.sort_values(["g1", "dataset_name", "wilcoxon_w"])
+    return df
+
+
+def wilcoxon_tests_autoconstructives(df, metric):
+    results = []
+    dataset_names = df["dataset_name"].unique()
+    df_melted = df.melt(["project", "dataset_name"])
+    # groups = df_melted["group"].unique()
+    # df_melted = df_melted.drop(["project", "variable"], axis=1)
+    df_melted = df_melted.dropna()
+    df_melted = df_melted.drop(
+        df_melted[~df_melted["variable"].str.contains("autoconstructive")].index
+    )
+    df_melted["group"] = df_melted["project"] + "-" + df_melted["variable"]
+    groups = df_melted["group"].unique()
+    # groups = df_melted["group"].unique()
+    for dataset_name in dataset_names:
+        df_current_dataset = df_melted[df_melted["dataset_name"] == dataset_name]
+        for g1 in groups:
+            for g2 in groups:
+                if g1 != g2:
+                    df1 = df_current_dataset[df_current_dataset["group"] == g1]
+                    df2 = df_current_dataset[df_current_dataset["group"] == g2]
+                    if df1.shape[0] < 2 or df2.shape[0] < 2:
+                        continue
+
+                    if df1.shape[0] != df2.shape[0]:
+                        continue
+
+                    g1_over_g2 = "d"
+                    stat = 999
+                    p = 999
+
+                    values1 = df1["value"].to_numpy()
+                    values2 = df2["value"].to_numpy()
+
+                    wilcoxon_result = {
+                        "wilcoxon_l": 0,
+                        "wilcoxon_d": 0,
+                        "wilcoxon_w": 0,
+                    }
+                    if any(values1 != values2):
+                        stat, p = wilcoxon(values1, values2)
+                    if p < 0.05:
+                        if values1.mean() > values2.mean():
+                            g1_over_g2 = "w"
+                        else:
+                            g1_over_g2 = "l"
+                    wilcoxon_result[f"wilcoxon_{g1_over_g2}"] = 1
+                    results.append(
+                        {
+                            **{
+                                "dataset_name": dataset_name,
+                                "g1_count": len(values1),
+                                "g1": g1,
+                                "g1_mean": values1.mean(),
+                                "g1_std": values1.std(),
+                                "g2_count": len(values2),
+                                "g2": g2,
+                                "g2_mean": values2.mean(),
+                                "g2_std": values2.std(),
+                                "statistic": stat,
+                                "p-value": p,
+                            },
+                            **wilcoxon_result,
+                        },
+                    )
+    df = pd.DataFrame(
+        results,
+        columns=[
+            "dataset_name",
+            "g1_count",
+            "g1",
+            "g1_mean",
+            "g1_std",
+            "g2_count",
+            "g2",
+            "g2_mean",
+            "g2_std",
+            "statistic",
+            "p-value",
+            "wilcoxon_l",
+            "wilcoxon_d",
+            "wilcoxon_w",
+        ],
+    )
+    df = df.sort_values(["g1", "dataset_name", "wilcoxon_w"])
     return df
 
 
@@ -161,58 +262,68 @@ def plot_html(df, filename="analysis.html"):
 
 
 if __name__ == "__main__":
-    df = wandb_to_df(
-        [
-            # "exp_14_stacking",
-            # "exp_14_stacking_rtol0.01",
-            # "exp_11",
-            # "exp_11_boosting",
-            # # "exp_12_rtol",
-            # "exp_13_rol_boosting",
-            # "exp_004_clean"
-            # "exp_011_rtol0.01",
-            # "exp_011_rtol0.001",
-            # "exp_011_autoencoders",
-            # "exp_011_autoencoders_50",
-            # "exp_012_rtol0.01",
-            # "exp_013_12foiautoencoders_rtol0.01",
-            # "exp_014_rtol_defato_0.01",
-            # "exp0007",
-            # "exp0009_stack_hidden_maxlayers2_noappend",
-            # "exp0009_maxlayers1",
-            # "exp0009_maxlayers2",
-            # "exp0009_stack_hidden_maxlayers2",
-            # "exp0016",
-            # "exp0016_tanh",
-            # "exp0016_relu",
-            # "exp0016_max_layers1_tanh",
-            # "exp0016_max_layers1_relu",
-            "exp0019",
-            "exp0019_tanh",
-            "exp0019_relu",
-            "exp0019_max_layers1_tanh",
-            # "exp0019_max_layers1_relu",
-        ],
-        metric_name,
-    )
-    df.to_csv('/tmp/csv.csv')
-    # df = pd.read_csv('/tmp/csv.csv')
-    # df = df.drop(columns=["Unnamed: 0"])
+    # "exp_14_stacking",
+    # "exp_14_stacking_rtol0.01",
+    # "exp_11",
+    # "exp_11_boosting",
+    # # "exp_12_rtol",
+    # "exp_13_rol_boosting",
+    # "exp_004_clean"
+    # "exp_011_rtol0.01",
+    # "exp_011_rtol0.001",
+    # "exp_011_autoencoders",
+    # "exp_011_autoencoders_50",
+    # "exp_012_rtol0.01",
+    # "exp_013_12foiautoencoders_rtol0.01",
+    # "exp_014_rtol_defato_0.01",
+    # "exp0007",
+    # "exp0009_stack_hidden_maxlayers2_noappend",
+    # "exp0009_maxlayers1",
+    # "exp0009_maxlayers2",
+    # "exp0009_stack_hidden_maxlayers2",
+    # "exp0016",
+    # "exp0016_tanh",
+    # "exp0016_relu",
+    # "exp0016_max_layers1_tanh",
+    # "exp0016_max_layers1_relu",
+    # "exp0019",
+    # "exp0019_tanh",
+    # "exp0019_relu",
+    # "exp0019_max_layers1_tanh",
+    # "exp0019_max_layers1_relu",
+    # df = wandb_to_df(
+    #     [
+    #         "exp0090_politica_1_oracle_1m1l",
+    #         "exp0090_politica_2_holdout_1m1l",
+    #         "exp0090_politica_3_best_validation_1m1l",
+    #         "exp0090_politica_4_diff_best_holdout_1m1l",
+    #         "exp0090_politica_1_oracle_1m1l_nosbss",
+    #         "exp0090_politica_2_holdout_1m1l_nosbss",
+    #         "exp0090_politica_3_best_validation_1m1l_nosbss",
+    #         "exp0090_politica_4_diff_best_holdout_1m1l_nosbss",
+    #     ],
+    #     metric_name,
+    # )
+    # df.to_csv("/tmp/csv.csv")
+    df = pd.read_csv("/tmp/csv.csv")
+    df = df.drop(columns=["Unnamed: 0"])
     df = df.sort_index(axis=1)
     metric_columns = [
         c
         for c in df.columns
-        if re.match(r"test_.*[1\-nn|3\-nn|svm|xgboost|rf|autoconstructive]_*" + metric_name, c)
+        if re.match(
+            r"test_.*[1\-nn|3\-nn|svm|xgboost|rf|autoconstructive]_*" + metric_name, c
+        )
         # if re.match("test_.*[drl]_" + metric, c)
     ]
 
     df_filtered_tmp = df[metric_columns + ["project", "dataset_name"]]
     df_filtered = pd.DataFrame()
-    for project in df_filtered_tmp['project'].unique():
-        df_p = df[df['project'] == project]
-        for dataset_name in df_p['dataset_name'].unique():
-            df_p_d = df_p[df_p['dataset_name'] == dataset_name]
-            tmp_df = df_p_d.iloc[:30, :]
+    for project in df_filtered_tmp["project"].unique():
+        df_p = df[df["project"] == project]
+        for dataset_name in df_p["dataset_name"].unique():
+            df_p_d = df_p[df_p["dataset_name"] == dataset_name]
+            tmp_df = df_p_d.iloc[:18, :]
 
             df_filtered = pd.concat((df_filtered, tmp_df))
 
@@ -220,7 +331,22 @@ if __name__ == "__main__":
     df.to_csv("analysis_wilcoxon.csv")
 
     # df.groupby(['project', 'g1', 'g2', 'wilcoxon_result']).count().unstack(2).to_csv("final.csv")
-    df.groupby(['project', 'wilcoxon_result'])['wilcoxon_result'].count().unstack(1).to_csv("final.csv")
+    df.groupby(["project"])["wilcoxon_l", "wilcoxon_d", "wilcoxon_w"].sum().to_csv(
+        "final.csv"
+    )
+
+    df_wilcoxon_autoconstructive = wilcoxon_tests_autoconstructives(
+        df_filtered, metric_name
+    )
+    df_wilcoxon_autoconstructive.to_csv("autoconstructive_analysis_wilcoxon.csv")
+    pd.pivot_table(
+        df_wilcoxon_autoconstructive,
+        index=["g1"],
+        columns=["g2"],
+        values=["wilcoxon_l", "wilcoxon_d", "wilcoxon_w"],
+        aggfunc=np.sum,
+        margins=True,
+    ).swaplevel(axis="columns").to_csv("autoconstructive_analysis_wilcoxon_pivot.csv")
 
     # df_pivot = df[df["g1"] == f"test_drl_untrained_{metric_name}"].pivot(
     #     index=["project", "dataset_name"],
@@ -229,6 +355,22 @@ if __name__ == "__main__":
     # )
     # df_pivot.columns = df_pivot.columns.swaplevel(0, 1)
     # df_pivot.sort_index(1).to_csv("pivot_untrained.csv")
+    df_wilcoxon_autoconstructive.groupby(["g1", "g2"]).sum().to_csv(
+        "autoconstructive_analysis_wilcoxon2.csv"
+    )
+    p = (
+        df_wilcoxon_autoconstructive.groupby(["g1", "g2"])
+        .sum()[["wilcoxon_l", "wilcoxon_d", "wilcoxon_w"]]
+        .unstack(0)
+    )
+    p = p.swaplevel(1, 0, axis="columns").reindex(
+        columns=[
+            (a, w) for a in p.index for w in ["wilcoxon_l", "wilcoxon_d", "wilcoxon_w"]
+        ]
+    )
+    p.loc["Column_Total"] = p.sum(numeric_only=True, axis=0)
+    p.loc[:, "Row_Total"] = p.sum(numeric_only=True, axis=1)
+    p.to_csv("autoconstructive_analysis_wilcoxon_final.csv")
 
     df_pivot = df[df["g1"] == f"test_autoconstructive_{metric_name}"].pivot(
         index=["project", "dataset_name"],
