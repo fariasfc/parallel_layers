@@ -355,9 +355,9 @@ if __name__ == "__main__":
     # )
     # df_pivot.columns = df_pivot.columns.swaplevel(0, 1)
     # df_pivot.sort_index(1).to_csv("pivot_untrained.csv")
-    df_wilcoxon_autoconstructive.groupby(["g1", "g2"]).sum().to_csv(
-        "autoconstructive_analysis_wilcoxon2.csv"
-    )
+    df_wilcoxon_autoconstructive.groupby(["g1", "g2"])[
+        "wilcoxon_l", "wilcoxon_d", "wilcoxon_w"
+    ].sum().to_csv("autoconstructive_analysis_wilcoxon2.csv")
     p = (
         df_wilcoxon_autoconstructive.groupby(["g1", "g2"])
         .sum()[["wilcoxon_l", "wilcoxon_d", "wilcoxon_w"]]
