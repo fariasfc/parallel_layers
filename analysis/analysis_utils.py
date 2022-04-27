@@ -41,7 +41,7 @@ def wandb_to_df(project_names, metric="overall_acc"):
                 for k in r.summary.keys()
                 if re.search(
                     # f"(valid|test)_(drl|trained|untrained|raw).*{metric}.*",
-                    f"test.*{metric}.*",
+                    f"(train|val|test).*{metric}.*",
                     k,
                 )
             }
@@ -291,21 +291,27 @@ if __name__ == "__main__":
     # "exp0019_relu",
     # "exp0019_max_layers1_tanh",
     # "exp0019_max_layers1_relu",
-    # df = wandb_to_df(
-    #     [
-    #         "exp0090_politica_1_oracle_1m1l",
-    #         "exp0090_politica_2_holdout_1m1l",
-    #         "exp0090_politica_3_best_validation_1m1l",
-    #         "exp0090_politica_4_diff_best_holdout_1m1l",
-    #         "exp0090_politica_1_oracle_1m1l_nosbss",
-    #         "exp0090_politica_2_holdout_1m1l_nosbss",
-    #         "exp0090_politica_3_best_validation_1m1l_nosbss",
-    #         "exp0090_politica_4_diff_best_holdout_1m1l_nosbss",
-    #     ],
-    #     metric_name,
-    # )
-    # df.to_csv("/tmp/csv.csv")
-    df = pd.read_csv("/tmp/csv.csv")
+    df = wandb_to_df(
+        [
+            "exp0090_politica_1_oracle_1m1l",
+            "exp0090_politica_1_oracle_1m1l_nosbss",
+            "exp0090_politica_1_oracle_1m5l_mon_metric_test",
+            "exp0090_politica_1_oracle_1m5l_mon_metric_test_append_orginal_inputs",
+            "exp0090_politica_2_holdout_1m1l",
+            "exp0090_politica_2_holdout_1m1l_nosbss",
+            "exp0090_politica_2_holdout_1m5l",
+            "exp0090_politica_2_holdout_1m5l_append_orginal_inputs",
+            "exp0090_politica_3_best_validation_1m1l",
+            "exp0090_politica_3_best_validation_1m1l_nosbss",
+            "exp0090_politica_4_diff_best_holdout_1m1l",
+            "exp0090_politica_4_diff_best_holdout_1m1l_nosbss",
+            "exp0090_politica_5_oracle_1m5l_mon_metric_test_topsis_pareto",
+            "exp0090_politica_5_oracle_1m5l_mon_metric_test_topsis_pareto_append_orig_inp",
+        ],
+        metric_name,
+    )
+    df.to_csv("raw_data.csv")
+    df = pd.read_csv("raw_data.csv")
     df = df.drop(columns=["Unnamed: 0"])
     df = df.sort_index(axis=1)
     metric_columns = [
@@ -375,7 +381,7 @@ if __name__ == "__main__":
     df_pivot = df[df["g1"] == f"test_autoconstructive_{metric_name}"].pivot(
         index=["project", "dataset_name"],
         columns="g2",
-        values=["g1_mean", "g2_mean", "wilcoxon_result"],
+        values=["g1_mean", "g2_mean", "wilcoxon_l", "wilcoxon_d", "wilcoxon_w"],
     )
     df_pivot.columns = df_pivot.columns.swaplevel(0, 1)
     df_pivot.sort_index(1).to_csv("pivot_trained.csv")

@@ -22,8 +22,10 @@
 			},
 			"args": [
 				"training.data_home=/home/fcf/projects/parallel_mlps/datasets/",
-				"training.dataset=blood-transfusion-service-center",
-				"model.chosen_policy=policy2",
+				// "training.dataset=blood-transfusion-service-center",
+				"training.dataset=diabetes",
+				"training.monitored_metric_add_layers=holdout_overall_acc",
+				"model.chosen_policy=policy6",
 				// "training.find_num_neurons_first=True",
 				"training.pareto_frontier=True",
 				"training.distance_name=correlation",
@@ -35,7 +37,7 @@
 				/////////
 				"training.debug_test=True",
 				// "training.num_epochs=5",
-				"model.max_neurons=3",
+				"model.max_neurons=100",
 				// "model.repetitions=2",
 				"model.activations=[identity, relu, sigmoid]",
 				/////////

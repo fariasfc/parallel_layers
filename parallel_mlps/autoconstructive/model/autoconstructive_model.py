@@ -459,7 +459,9 @@ class AutoConstructiveModel(nn.Module):
 
         accumulators = {
             "train_loss": Objective(
-                "train_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None,
+                "train_loss",
+                ObjectiveEnum.MINIMIZATION,
+                reduction_fn=None,
             ),
             "validation_loss": Objective(
                 "validation_loss", ObjectiveEnum.MINIMIZATION, reduction_fn=None
@@ -978,6 +980,26 @@ class AutoConstructiveModel(nn.Module):
                 by=["holdout_overall_acc", "num_neurons"],
                 ascending=[False, True],
             )
+        elif self.chosen_policy == "policy5":
+            mcdm_tuples = [
+                ("num_neurons", -1),
+                ("epoch", 1),
+                ("test_overall_acc", 1),
+            ]
+            ranked_pmlps_df = self.get_ranked_pmlps_df(
+                pmlps_df, mcdm_tuples, only_pareto_solutions=True, sort_by_rank=True
+            )
+        elif self.chosen_policy == "policy6":
+            mcdm_tuples = [
+                ("num_neurons", -1),
+                ("mean_diffs", -1),
+                ("epoch", 1),
+                ("holdout_overall_acc", 1),
+            ]
+            ranked_pmlps_df = self.get_ranked_pmlps_df(
+                pmlps_df, mcdm_tuples, only_pareto_solutions=True, sort_by_rank=True
+            )
+
         else:
             raise RuntimeError(f"chosen_policy {self.chosen_policy} not implemented.")
 
@@ -1052,16 +1074,20 @@ class AutoConstructiveModel(nn.Module):
 
         mcdm_keys = [k[0] for k in mcdm_tuples]
 
-        # types = [k[1] for k in mcdm_tuples]
-        # mcdm_method = pymcdm.methods.TOPSIS(pymcdm.normalizations.minmax_normalization)
+        types = [k[1] for k in mcdm_tuples]
+        mcdm_method = pymcdm.methods.TOPSIS(pymcdm.normalizations.minmax_normalization)
 
         decision_matrix = pmlps_df[mcdm_keys].to_numpy()
+        pareto_matrix = decision_matrix.copy()
 
-        pareto_mask = helpers.is_pareto_efficient(decision_matrix)
+        for c in range(pareto_matrix.shape[1]):
+            # types inform if is profit (1 - should be maximized) or cost (-1 - should be minimized)
+            # is_pareto_efficient expectes a matrix of costs to minimize
+            # that's why i am multipying by -types[c]
+            pareto_matrix[:, c] *= -types[c]
+
+        pareto_mask = helpers.is_pareto_efficient(pareto_matrix)
         pmlps_df["dominant_solution"] = pareto_mask
-        if only_pareto_solutions:
-            pmlps_df = pmlps_df.loc[pareto_mask]
-            decision_matrix = pmlps_df[mcdm_keys].to_numpy()
 
         if theoretical_best is not None:
             if theoretical_worst is None:
@@ -1072,17 +1098,20 @@ class AutoConstructiveModel(nn.Module):
                 (decision_matrix, theoretical_best, theoretical_worst)
             )
 
-        # if self.mcdm_weights is not None:
-        #     weights = np.array(self.mcdm_weights)
-        # else:
-        #     weights = pymcdm.weights.equal_weights(decision_matrix)
+        if self.mcdm_weights is not None:
+            weights = np.array(self.mcdm_weights)
+        else:
+            weights = pymcdm.weights.equal_weights(decision_matrix)
         # # weights = np.array([0.5, 0.4, 0.1])
-        # ranks = mcdm_method(decision_matrix, weights, types)
+        ranks = mcdm_method(decision_matrix, weights, types)
         # removing best_and_worst_theoretical_mlps
-        # if theoretical_best is not None:
-        #     ranks = ranks[:-2]
+        if theoretical_best is not None:
+            ranks = ranks[:-2]
 
-        pmlps_df["rank"] = -999
+        pmlps_df["rank"] = ranks
+
+        if only_pareto_solutions:
+            pmlps_df = pmlps_df.loc[pareto_mask]
 
         if sort_by_rank:
             pmlps_df = pmlps_df.sort_values(by=["rank"], ascending=False).reset_index()
@@ -1734,7 +1763,7 @@ class AutoConstructiveModel(nn.Module):
             if better_model:
                 self.best_model_sequential = deepcopy(current_model)
                 self.logger.info(
-                    f"Improved {self.monitored_metric} from {global_best_metric} to {current_best_metric}. Setting current_patience=0. Current best model with {len(self.best_model_sequential)-1} layers: ({self.best_model_sequential})."
+                    f"Improved {self.monitored_metric_add_layers} from {global_best_metric} to {current_best_metric}. Setting current_patience=0. Current best model with {len(self.best_model_sequential)-1} layers: ({self.best_model_sequential})."
                 )
                 global_best_metric = current_best_metric.to(self.device)
                 current_patience = 0

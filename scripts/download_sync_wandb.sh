@@ -14,9 +14,10 @@ rsync -avH -e ssh fcf@200.133.5.120:/home/fcf/projects/parallel_mlps/outputs/tar
 # extracting file
 cd /tmp
 tar -xvf $1.tar
-cd /tmp/outputs
+# cd /tmp/outputs
 
 # Syncing runs
-find /tmp/${1} -type d -regex ".*\/${1}\/.*offline-run-[0-9]\{8\}_[0-9]\{6\}-.\{8\}" -exec wandb sync {} \;
+# find /tmp/${1} -type d -regex ".*\/${1}\/.*offline-run-[0-9]\{8\}_[0-9]\{6\}-.\{8\}" -exec wandb sync {} \;
+find /tmp/${1} -type d -regex ".*\/${1}\/.*offline-run-.*" -exec wandb sync {} \;
 
 
