@@ -992,6 +992,15 @@ class AutoConstructiveModel(nn.Module):
         elif self.chosen_policy == "policy6":
             mcdm_tuples = [
                 ("num_neurons", -1),
+                ("epoch", 1),
+                ("holdout_overall_acc", 1),
+            ]
+            ranked_pmlps_df = self.get_ranked_pmlps_df(
+                pmlps_df, mcdm_tuples, only_pareto_solutions=True, sort_by_rank=True
+            )
+        elif self.chosen_policy == "policy7":
+            mcdm_tuples = [
+                ("num_neurons", -1),
                 ("mean_diffs", -1),
                 ("epoch", 1),
                 ("holdout_overall_acc", 1),
