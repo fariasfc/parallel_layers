@@ -670,6 +670,16 @@ class AutoConstructiveModel(nn.Module):
                             ]
                             .cpu()
                             .numpy(),
+                            "validation_loss": models_validation_loss.current_reduction[
+                                best_improved_model_ids_numpy
+                            ]
+                            .cpu()
+                            .numpy(),
+                            "holdout_loss": models_validation_loss.current_reduction[
+                                best_improved_model_ids_numpy
+                            ]
+                            .cpu()
+                            .numpy(),
                             "repetition": self.pmlps.output__repetition[
                                 best_improved_model_ids_numpy
                             ]
@@ -1008,6 +1018,24 @@ class AutoConstructiveModel(nn.Module):
             ranked_pmlps_df = self.get_ranked_pmlps_df(
                 pmlps_df, mcdm_tuples, only_pareto_solutions=True, sort_by_rank=True
             )
+        elif self.chosen_policy == "policy8":
+            mcdm_tuples = [
+                ("num_neurons", -1),
+                ("mean_diffs", -1),
+                ("loss", -1),
+                ("validation_loss", -1),
+                ("holdout_loss", -1),
+                ("epoch", 1),
+                ("holdout_overall_acc", 1),
+                ("holdout_matthews_corrcoef", 1),
+                ("validation_overall_acc", 1),
+                ("validation_matthews_corrcoef", 1),
+                ("train_overall_acc", 1),
+                ("train_matthews_corrcoef", 1),
+            ]
+            ranked_pmlps_df = self.get_ranked_pmlps_df(
+                pmlps_df, mcdm_tuples, only_pareto_solutions=True, sort_by_rank=True
+            )
 
         else:
             raise RuntimeError(f"chosen_policy {self.chosen_policy} not implemented.")
@@ -1254,7 +1282,11 @@ class AutoConstructiveModel(nn.Module):
                 # ignoring validation indices
 
                 if self.cross_validation:
-                    loss = individual_losses.sum(0) / current_mask.sum(0)
+                    current_mask_sum = current_mask.sum(0)
+
+                    # avoiding zero division
+                    current_mask_sum[current_mask_sum == 0] = 1
+                    loss = individual_losses.sum(0) / current_mask_sum
                 else:
                     loss = individual_losses.mean(
                         0
