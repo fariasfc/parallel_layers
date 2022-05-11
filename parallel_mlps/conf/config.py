@@ -1,3 +1,4 @@
+from ctypes import Union
 from dataclasses import dataclass
 from torch import optim
 from typing import List, Optional
@@ -47,7 +48,7 @@ class ModelConfig:
     repetitions: int
     repetitions_for_best_neuron: int
     activations: List[str]
-    topk: Optional[int]
+    topk: Optional[Union[int, float]]
     topk_architecture: Optional[int]
     output_confidence: bool
     min_confidence: float

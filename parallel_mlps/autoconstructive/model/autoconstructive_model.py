@@ -1039,7 +1039,6 @@ class AutoConstructiveModel(nn.Module):
         elif self.chosen_policy == "policy9":
             mcdm_tuples = [
                 ("num_neurons", -1),
-                ("mean_diffs", -1),
                 ("epoch", 1),
                 ("train_overall_acc", 1),
                 ("validation_overall_acc", 1),
