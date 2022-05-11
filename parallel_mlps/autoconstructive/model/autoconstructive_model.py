@@ -1036,6 +1036,18 @@ class AutoConstructiveModel(nn.Module):
             ranked_pmlps_df = self.get_ranked_pmlps_df(
                 pmlps_df, mcdm_tuples, only_pareto_solutions=True, sort_by_rank=True
             )
+        elif self.chosen_policy == "policy9":
+            mcdm_tuples = [
+                ("num_neurons", -1),
+                ("mean_diffs", -1),
+                ("epoch", 1),
+                ("train_overall_acc", 1),
+                ("validation_overall_acc", 1),
+                ("holdout_overall_acc", 1),
+            ]
+            ranked_pmlps_df = self.get_ranked_pmlps_df(
+                pmlps_df, mcdm_tuples, only_pareto_solutions=True, sort_by_rank=True
+            )
 
         else:
             raise RuntimeError(f"chosen_policy {self.chosen_policy} not implemented.")
@@ -1060,7 +1072,10 @@ class AutoConstructiveModel(nn.Module):
         )
         print(f"ranked_pmlps_df top 0.01: {ranked_pmlps_df.head(10)}")
 
-        topk = min(self.topk, ranked_pmlps_df.shape[0])
+        if self.topk < 1:
+            topk = int(self.topk * ranked_pmlps_df.shape[0])
+        else:
+            topk = min(self.topk, ranked_pmlps_df.shape[0])
         chosen_df = ranked_pmlps_df.iloc[:topk, :].reset_index()
         chosen_model_ids = chosen_df["model_id"].tolist()
         return chosen_df, chosen_model_ids

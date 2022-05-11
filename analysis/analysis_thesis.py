@@ -5,8 +5,8 @@ from tqdm import tqdm
 from pathlib import Path
 import pymcdm
 
-from autoconstructive.utils import helpers
 
+# folder that contains the nosbss.csv
 folder = Path("experiments/exp0090/")
 folder.absolute()
 df_path = folder / "politica_1_oracle_1m1l_and_nosbss.csv"
@@ -21,7 +21,7 @@ def csv_to_parquet():
     df.to_parquet(df_parquet_path)
 
 
-# csv_to_parquet()
+csv_to_parquet()
 
 
 def load_df():
@@ -65,6 +65,32 @@ def num_models(df):
     )
 
 
+def is_pareto_efficient(costs, return_mask=True):
+    """
+    Find the pareto-efficient points
+    :param costs: An (n_points, n_costs) array of costs to be minimized
+    :param return_mask: True to return a mask
+    :return: An array of indices of pareto-efficient points.
+        If return_mask is True, this will be an (n_points, ) boolean array
+        Otherwise it will be a (n_efficient_points, ) integer array of indices.
+    """
+    is_efficient = np.arange(costs.shape[0])
+    n_points = costs.shape[0]
+    next_point_index = 0  # Next index in the is_efficient array to search for
+    while next_point_index < len(costs):
+        nondominated_point_mask = np.any(costs < costs[next_point_index], axis=1)
+        nondominated_point_mask[next_point_index] = True
+        is_efficient = is_efficient[nondominated_point_mask]  # Remove dominated points
+        costs = costs[nondominated_point_mask]
+        next_point_index = np.sum(nondominated_point_mask[:next_point_index]) + 1
+    if return_mask:
+        is_efficient_mask = np.zeros(n_points, dtype=bool)
+        is_efficient_mask[is_efficient] = True
+        return is_efficient_mask
+    else:
+        return is_efficient
+
+
 def get_ranked_pmlps_df(
     pmlps_df,
     mcdm_tuples,
@@ -90,7 +116,7 @@ def get_ranked_pmlps_df(
         # that's why i am multipying by -types[c]
         pareto_matrix[:, c] *= -types[c]
 
-    pareto_mask = helpers.is_pareto_efficient(pareto_matrix)
+    pareto_mask = is_pareto_efficient(pareto_matrix)
     pmlps_df["dominant_solution"] = pareto_mask
 
     if theoretical_best is not None:
@@ -134,6 +160,9 @@ def apply_policies(df):
         "topsis_pareto_holdout",
         "topsis_pareto_holdout_mean_diffs",
         "smallest_euclidian_holdout_test_utopic",
+        "all_except_test",
+        "train_validation_holdout_no_num_neurons_no_epochs",
+        "topsis_pareto_train_validation_holdout",
         "topsis_pareto_oracle_holdout_train",
         "topsis_pareto_oracle_holdout_train_noepochs_nonum_neurons",
     ]
@@ -193,6 +222,33 @@ def apply_policies(df):
                             ("num_neurons", -1),
                             ("epoch", 1),
                             ("test_overall_acc", 1),
+                        ]
+                        ranked_pmlps_df = get_ranked_pmlps_df(
+                            pmlps_df,
+                            mcdm_tuples,
+                            only_pareto_solutions=True,
+                            sort_by_rank=True,
+                        )
+                    elif policy == "train_validation_holdout_no_num_neurons_no_epochs":
+                        mcdm_tuples = [
+                            ("train_overall_acc", 1),
+                            ("validation_overall_acc", 1),
+                            ("holdout_overall_acc", 1),
+                        ]
+                        ranked_pmlps_df = get_ranked_pmlps_df(
+                            pmlps_df,
+                            mcdm_tuples,
+                            only_pareto_solutions=True,
+                            sort_by_rank=True,
+                        )
+
+                    elif policy == "topsis_pareto_train_validation_holdout":
+                        mcdm_tuples = [
+                            ("num_neurons", -1),
+                            ("epoch", 1),
+                            ("train_overall_acc", 1),
+                            ("validation_overall_acc", 1),
+                            ("holdout_overall_acc", 1),
                         ]
                         ranked_pmlps_df = get_ranked_pmlps_df(
                             pmlps_df,
@@ -270,13 +326,9 @@ def apply_policies(df):
                             columns=["euclidian_to_utopic"]
                         )
 
-                    elif policy == 8:
+                    elif policy == "all_except_test":
                         mcdm_tuples = [
                             ("num_neurons", -1),
-                            ("mean_diffs", -1),
-                            ("loss", -1),
-                            ("validation_loss", -1),
-                            ("holdout_loss", -1),
                             ("epoch", 1),
                             ("holdout_overall_acc", 1),
                             ("holdout_matthews_corrcoef", 1),
@@ -294,17 +346,57 @@ def apply_policies(df):
                     choice = ranked_pmlps_df.iloc[0].copy()
                     choice["policy"] = policy
                     choices.append(choice)
-    pd.DataFrame(choices).to_csv(analysis_folder / "choices_per_policy.csv")
+    df_policies = pd.DataFrame(choices)
+    df_policies.to_csv(analysis_folder / "choices_per_policy.csv")
+    return df_policies
+
+
+def plot_policies(df):
+    fig = px.scatter(
+        df,
+        x="holdout_overall_acc",
+        y="test_overall_acc",
+        color="dataset",
+        # symbol="policy",
+        facet_row="policy",
+    )
+    fig.update_layout(height=1500)
+    fig.write_html(analysis_folder / "choices_per_policy.html")
+
+    fig = px.scatter_3d(
+        df,
+        x="holdout_overall_acc",
+        y="test_overall_acc",
+        z="num_neurons",
+        color="policy",
+    )
+    fig.write_html(analysis_folder / "choices_per_policy_3d.html")
+
+
+def plot_box_policies(df):
+    fig = px.box(
+        df,
+        x="policy",
+        y="test_overall_acc",
+        color="dataset",
+        # symbol="policy",
+        # facet_row="policy",
+    )
+    # fig.update_layout(height=1500)
+    fig.write_html(analysis_folder / "choices_per_policy_box.html")
 
 
 df = load_df()
 
-print(df.shape)
+# print(df.shape)
 
 
-plot_holdout_test(df)
-# debug_ilpd(df)
+# plot_holdout_test(df)
+# # debug_ilpd(df)
 
-num_models(df)
+# num_models(df)
 
-apply_policies(df)
+df_policies = apply_policies(df)
+plot_policies(df_policies)
+
+plot_box_policies(df_policies)
