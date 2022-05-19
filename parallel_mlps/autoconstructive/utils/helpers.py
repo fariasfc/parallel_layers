@@ -3,8 +3,8 @@ import numpy as np
 import math
 from torch.nn import init
 
-from autoconstructive.autoconstructive_enums import ObjectiveEnum
-from experiment_utils import assess_model
+from parallel_mlps.autoconstructive.autoconstructive_enums import ObjectiveEnum
+from parallel_mlps.experiment_utils import assess_model
 
 
 def save_flattend_df(

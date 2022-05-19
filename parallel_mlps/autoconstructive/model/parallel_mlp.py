@@ -1,9 +1,9 @@
 from copy import deepcopy
 import logging
-from conf.config import MAP_ACTIVATION
+from parallel_mlps.conf.config import MAP_ACTIVATION
 from functools import partial
 from itertools import groupby
-from autoconstructive.utils import helpers
+from parallel_mlps.autoconstructive.utils import helpers
 from joblib import Parallel, delayed
 import numpy as np
 import math
@@ -369,7 +369,7 @@ class ParallelMLPs(nn.Module):
 
         x = (
             x[:, :, None] * self.weight.T[None, :, :]
-        )  # [batch_size, total_hidden_neurons, out_features]
+        )  # [batch_size, total_hidden_neurons, 1] * [1, total_hidden_neurons, out_features] = [batch_size, total_hidden_neurons, out_features]
 
         # [batch_size, total_repetitions, num_architectures, out_features]
         adjusted_out = (
@@ -377,10 +377,9 @@ class ParallelMLPs(nn.Module):
                 batch_size, self.num_unique_models, self.out_features, device=x.device
             ).scatter_add_(
                 1,
-                # self.hidden_neuron__layer_id,
                 self.hidden_neuron__model_id[None, :, None].expand(
                     batch_size, -1, self.out_features
-                ),
+                ), # [batch_size, total_hidden_neurons, out_features]. expand does not consumes memory.
                 x,
             )
         ) + self.bias[None, :, :]

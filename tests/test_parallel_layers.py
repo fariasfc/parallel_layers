@@ -1,10 +1,12 @@
 #!/usr/bin/env python
+from joblib import Parallel
 import numpy as np
 from torch.functional import Tensor
 from parallel_mlps.autoconstructive.model.parallel_mlp import (
     ParallelMLPs,
     build_model_ids,
 )
+from parallel_mlps.conf.config import resolve_activations
 import pytest
 import torch
 from torch import nn
@@ -501,3 +503,80 @@ def test_content(response):
     """Sample pytest test function with the pytest fixture as an argument."""
     # from bs4 import BeautifulSoup
     # assert 'GitHub' in BeautifulSoup(response.content).title.string
+
+
+def test_parallel_mlps():
+    activations = [nn.Sigmoid(), nn.Identity()]
+    (
+        hidden_neuron__model_id,
+        output__model_id,
+        output__architecture_id,
+        output__repetition,
+        output__activation
+    ) = build_model_ids(repetitions=3, activation_functions=activations, min_neurons=1, max_neurons=5, step=1)
+
+    in_features = 4
+    out_features = 2
+
+    pmlps = ParallelMLPs(
+        in_features=in_features,
+        out_features=out_features,
+        hidden_neuron__model_id=hidden_neuron__model_id,
+        output__model_id=output__model_id,
+        output__architecture_id=output__architecture_id,
+        output__repetition=output__repetition,
+        drop_samples=None,
+        input_perturbation_strategy=None,
+        activations=activations,
+        bias=True,
+        device="cpu",
+        logger=None,
+    )
+    # pmlps = ParallelMLPs(4, 2, [0, 1, 1, 2, 2, 2], [0, 1, 2], [0, 1, 2], [0, 0, 0], drop_samples=None, input_perturbation_strategy=None, activations=[nn.Sigmoid])
+    inputs = torch.tensor([[0, 1, 2, 3], [10, 11, 12, 13]]).float()
+    outputs = pmlps(inputs) # batch, num_models, out_features
+    num_models = len(output__model_id.unique())
+    for i in range(num_models):
+        internal_mlp = pmlps.extract_mlps([i])[0]
+        internal_outputs = internal_mlp(inputs)
+        assert torch.allclose(internal_outputs, outputs[:, i, :])
+    print(outputs)
+
+def test_scatter():
+    """_summary_
+        self[index[i]] += src[i]  # if dim == 0
+
+        self[index[i][j]][j] += src[i][j]  # if dim == 0
+        self[i][index[i][j]] += src[i][j]  # if dim == 1
+
+        self[index[i][j][k]][j][k] += src[i][j][k]  # if dim == 0
+        self[i][index[i][j][k]][k] += src[i][j][k]  # if dim == 1
+        self[i][j][index[i][j][k]] += src[i][j][k]  # if dim == 2
+
+    """
+    self_ = torch.zeros(1, 3).float()
+    print(f"self_ {self_.size()}: {self_}")
+
+    index = torch.tensor([[0, 1, 1, 2, 2, 2]]).long()
+    print(f"index {index.size()}: {index}")
+
+    src = torch.tensor([[1, 2, 3, 4 ,5, 6]]).float()
+    print(f"src {src.size()}: {src}")
+
+    self_.scatter_add_(1, index, src)
+    print(f"self_ after scatter(dim=1) {self_.size()}: {self_}")
+
+
+
+
+    self_ = torch.zeros(2, 2).float()
+    print(f"self_ {self_.size()}: {self_}")
+
+    index = torch.tensor([[0, 1, 1], [0, 1, 1]]).long()
+    print(f"index {index.size()}: {index}")
+
+    src = torch.tensor([[00, 31, 32],[10, 41, 42]]).float()
+    print(f"src {src.size()}: {src}")
+
+    self_.scatter_add_(1, index, src)
+    print(f"self_ after scatter(dim=1) {self_.size()}: {self_}")

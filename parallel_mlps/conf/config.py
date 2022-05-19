@@ -8,7 +8,7 @@ from torch import nn
 from torch.nn.modules import loss
 from torch.optim.optimizer import Optimizer
 
-from autoconstructive.autoconstructive_enums import ObjectiveEnum
+from parallel_mlps.autoconstructive.autoconstructive_enums import ObjectiveEnum
 
 
 @dataclass
