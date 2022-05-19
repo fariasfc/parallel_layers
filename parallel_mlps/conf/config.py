@@ -124,6 +124,10 @@ MAP_ACTIVATION = {
     "ELU()": nn.ELU,
     "gelu": nn.GELU,
     "GELU()": nn.GELU,
+    "mish": nn.Mish,
+    "Mish()": nn.Mish,
+    "hardshrink": nn.Hardshrink,
+    "Hardshrink()": nn.Hardshrink,
 }
 
 

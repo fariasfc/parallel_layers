@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 from torch.optim.sgd import SGD
@@ -121,6 +122,7 @@ def main_sequential_parallel(cfg: AutoConstructiveConfig) -> None:
                     y_test = y_test.to(cfg.model.device)
 
             for num_epochs in num_epochs_list:
+                print(f"Simulations with num_features={num_features}, num_samples={num_samples}, num_epochs={num_epochs}")
                 cfg.training.num_epochs = num_epochs+2
 
                 (
@@ -151,7 +153,7 @@ def main_sequential_parallel(cfg: AutoConstructiveConfig) -> None:
                     None,
                     resolve_activations(cfg.model.activations),
                     device=cfg.model.device
-                )
+                ).to(cfg.model.device)
                 optimizer = SGD(pmlps.parameters(),lr=cfg.model.learning_rate)
                 loss_function=resolve_loss_function(cfg.model.loss_function)
                 loss_function.reduction = "none"
@@ -207,7 +209,9 @@ def main_sequential_parallel(cfg: AutoConstructiveConfig) -> None:
             pmlps = None
     df = pd.DataFrame(d)
     df["parallel/sequential"] = df["parallel"]/df["sequential"]
-    df.to_csv(f"times_{cfg.model.device}.csv")
+    df_path = Path(f"times_{cfg.model.device}.csv")
+    print(f"Saving df to {df_path.absolute()}")
+    df.to_csv(df_path)
     print(df)
 
 
