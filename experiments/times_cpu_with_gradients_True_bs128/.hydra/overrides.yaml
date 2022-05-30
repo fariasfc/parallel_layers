@@ -1,0 +1,4 @@
+- model.device=cuda
+- model.repetitions=10
+- training.batch_size=128
+- model.activations=[identity,sigmoid,tanh,relu,leakyrelu,elu,gelu,selu,hardshrink,mish]

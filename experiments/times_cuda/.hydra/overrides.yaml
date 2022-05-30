@@ -1,0 +1,3 @@
+- model.device=cuda
+- model.repetitions=10
+- model.activations=[identity,sigmoid,tanh,relu,leakyrelu,elu,gelu,selu,hardshrink,mish]

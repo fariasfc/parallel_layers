@@ -1,0 +1,13 @@
+,num_samples,num_features,min_neurons,max_neurons,epochs,num_models,activation_functions,repetitions,sequential,parallel,device,parallel/sequential
+0,10000,100,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,600.4224186247957,21.590452322499186,cpu,0.03595877111309375
+1,1000,100,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,60.855569468675824,2.1350004097999773,cpu,0.03508307338901702
+2,100,100,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,7.215132990907295,0.21791615880065365,cpu,0.030202653100819828
+3,10000,50,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,573.3779159387195,20.43430928159942,cpu,0.035638465859196715
+4,1000,50,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,58.323377676075324,2.0322338389989456,cpu,0.0348442411940861
+5,100,50,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,6.955089784163283,0.20549307480250717,cpu,0.02954571129626741
+6,10000,10,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,556.692392278547,20.033580186002656,cpu,0.03598680431756042
+7,1000,10,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,56.68499284633435,2.001209253699926,cpu,0.035304039979769324
+8,100,10,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,6.656604556422098,0.2014904601004673,cpu,0.030269254902046898
+9,10000,5,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,555.9199468654915,19.700730252402717,cpu,0.03543807046946894
+10,1000,5,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,56.42123434121313,1.9824522913986584,cpu,0.03513663454098819
+11,100,5,1,100,12,10000,"['identity', 'sigmoid', 'tanh', 'relu', 'leakyrelu', 'elu', 'gelu', 'selu', 'hardshrink', 'mish']",10,6.618662450469856,0.20106880469684257,cpu,0.030379069215498183

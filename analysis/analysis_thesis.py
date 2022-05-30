@@ -1,4 +1,12 @@
+from sklearn.linear_model import LinearRegression
+
+
 import pandas as pd
+from plotly.subplots import make_subplots
+
+import plotly.graph_objects as go
+
+
 import plotly.express as px
 import numpy as np
 from tqdm import tqdm
@@ -6,14 +14,40 @@ from pathlib import Path
 import pymcdm
 
 
+use_topstis = False
 # folder that contains the nosbss.csv
 folder = Path("experiments/exp0090/")
+policies_folder = folder / "policies"
 folder.absolute()
 df_path = folder / "politica_1_oracle_1m1l_and_nosbss.csv"
 df_parquet_path = folder / "politica_1_oracle_1m1l_and_nosbss.parquet"
 
-analysis_folder = folder / "plots"
+policies = [
+    "oracle",
+    "holdout",
+    "validation",
+    "0.01_smallest_mean_dist_holdout",
+    "smallest_euclidian_holdout_test_utopic",
+    "",
+]
+
+if use_topstis:
+    policies += [
+        "topsis_pareto_oracle",
+        "topsis_pareto_holdout",
+        "topsis_pareto_holdout_mean_diffs",
+        "all_except_test",
+        "train_validation_holdout_no_num_neurons_no_epochs",
+        "topsis_pareto_train_validation_holdout",
+        "topsis_pareto_oracle_holdout_train",
+        "topsis_pareto_oracle_holdout_train_noepochs_nonum_neurons",
+    ]
+    analysis_folder = folder / "plots"
+else:
+    analysis_folder = folder / "plots_no_topsis"
+
 analysis_folder.mkdir(parents=True, exist_ok=True)
+policies_folder.mkdir(parents=True, exist_ok=True)
 
 
 def csv_to_parquet():
@@ -37,6 +71,25 @@ def load_df():
         + abs(df["train_overall_acc"] - df["validation_overall_acc"])
     ) / 3
     print(df.keys())
+
+    return df
+
+def load_df_policies():
+    policies = policies_folder.glob("**/*.csv")
+    df_policies = pd.concat([pd.read_csv(policy_file_path) for policy_file_path in policies if policy_file_path.name in policies])
+    return df_policies
+
+def load_df_times():
+    df_times_cuda = pd.read_csv(Path("experiments/times_cuda/times_cuda.csv"))
+    df_times_cpu = pd.read_csv(Path("experiments/times_cpu/times_cpu.csv"))
+    # for df_device_key, df in dfs.items():
+    # #,num_samples,num_features,min_neurons,max_neurons,epochs,num_models,activation_functions,repetitions,sequential,parallel,device,parallel/sequential
+    #     df = df.drop(columns=["min_neurons", "max_neurons", "epochs", "repetitions", "activation_functions", "repetitions"])
+    #     df = df.melt(id_vars=["num_samples", "num_features", "num_models", "device"])
+    # df_times_cpu = pd.read_csv(Path("experiments/times_cuda/times_cpu.csv"))
+    df = pd.concat((df_times_cuda, df_times_cpu))
+
+    df = df.drop(columns=["Unnamed: 0"])
 
     return df
 
@@ -151,47 +204,35 @@ def apply_policies(df):
     # datasets = ["diabetes", "credit-g"]
     runs = df["run"].unique()
 
-    policies = [
-        "oracle",
-        "holdout",
-        "validation",
-        "0.01_smallest_mean_dist_holdout",
-        "topsis_pareto_oracle",
-        "topsis_pareto_holdout",
-        "topsis_pareto_holdout_mean_diffs",
-        "smallest_euclidian_holdout_test_utopic",
-        "all_except_test",
-        "train_validation_holdout_no_num_neurons_no_epochs",
-        "topsis_pareto_train_validation_holdout",
-        "topsis_pareto_oracle_holdout_train",
-        "topsis_pareto_oracle_holdout_train_noepochs_nonum_neurons",
-    ]
     experiments = [
         "exp0090_politica_1_oracle_1m1l",
         "exp0090_politica_1_oracle_1m1l_nosbss",
     ]
-    choices = []
-    for experiment in experiments:
-        for dataset in tqdm(datasets):
-            for run in runs:
-                pmlps_df = df[
-                    (df["dataset"] == dataset)
-                    & (df["run"] == run)
-                    & (df["experiment"] == experiment)
-                ]
-                pmlps_df = pmlps_df.sort_values(
-                    by=["mean_diffs", "num_neurons", "holdout_overall_acc"],
-                    ascending=[True, True, False],
-                )
-                mcdm_tuples = [
-                    ("num_neurons", -1),
-                    ("epoch", 1),
-                    ("holdout_overall_acc", 1),
-                ]
-                ranked_pmlps_df_original = get_ranked_pmlps_df(
-                    pmlps_df, mcdm_tuples, only_pareto_solutions=False
-                )
-                for policy in policies:
+    for policy in policies:
+        policy_file_path = policies_folder / f"{policy}.csv"
+        if policy_file_path.exists():
+            continue
+        choices = []
+        for experiment in experiments:
+            for dataset in tqdm(datasets):
+                pmlps_df_dataset = df[df["dataset"] == dataset]
+                for run in runs:
+                    pmlps_df = pmlps_df_dataset[
+                        (pmlps_df_dataset["run"] == run)
+                        & (pmlps_df_dataset["experiment"] == experiment)
+                    ]
+                    pmlps_df = pmlps_df.sort_values(
+                        by=["mean_diffs", "num_neurons", "holdout_overall_acc"],
+                        ascending=[True, True, False],
+                    )
+                    mcdm_tuples = [
+                        ("num_neurons", -1),
+                        ("epoch", 1),
+                        ("holdout_overall_acc", 1),
+                    ]
+                    ranked_pmlps_df_original = get_ranked_pmlps_df(
+                        pmlps_df, mcdm_tuples, only_pareto_solutions=False
+                    )
                     ranked_pmlps_df = ranked_pmlps_df_original.copy()
 
                     if policy == "oracle":
@@ -325,6 +366,21 @@ def apply_policies(df):
                         ranked_pmlps_df = ranked_pmlps_df.drop(
                             columns=["euclidian_to_utopic"]
                         )
+                    elif policy == "smallest_euclidian_holdout_test_utopic":
+                        overall_accs = ranked_pmlps_df[
+                            ["test_overall_acc", "holdout_overall_acc"]
+                        ].values
+                        utopic_accs = np.array([[1.0, 1.0]])
+                        ranked_pmlps_df.loc[:, "euclidian_to_utopic"] = np.sqrt(
+                            ((overall_accs - utopic_accs) ** 2).sum(1)
+                        )
+                        ranked_pmlps_df = ranked_pmlps_df.sort_values(
+                            by=["euclidian_to_utopic", "num_neurons"],
+                            ascending=[True, True],
+                        )
+                        ranked_pmlps_df = ranked_pmlps_df.drop(
+                            columns=["euclidian_to_utopic"]
+                        )
 
                     elif policy == "all_except_test":
                         mcdm_tuples = [
@@ -346,9 +402,8 @@ def apply_policies(df):
                     choice = ranked_pmlps_df.iloc[0].copy()
                     choice["policy"] = policy
                     choices.append(choice)
-    df_policies = pd.DataFrame(choices)
-    df_policies.to_csv(analysis_folder / "choices_per_policy.csv")
-    return df_policies
+        df_policy = pd.DataFrame(choices)
+        df_policy.to_csv(policy_file_path)
 
 
 def plot_policies(df):
@@ -385,8 +440,135 @@ def plot_box_policies(df):
     # fig.update_layout(height=1500)
     fig.write_html(analysis_folder / "choices_per_policy_box.html")
 
+def plot_times(df):
+    df = df.drop(columns=["min_neurons", "max_neurons", "epochs", "repetitions", "activation_functions", "repetitions", "parallel/sequential"])
+    df = df.melt(id_vars=["num_samples", "num_features", "num_models", "device"])
+    # fig = px.scatter_3d(
+    #     df,
+    #     x="num_features",
+    #     y="num_samples",
+    #     z="value",
+    #     color="variable",
+    #     symbol="device",
+    # )
+    df_parallel = df[df["variable"] == "parallel"]
+    df_sequential = df[df["variable"] == "sequential"]
+    df = df.rename(columns={"value": "seconds", "variable": "strategy"})
+    for device in ["cuda", "cpu"]:
+        for strategy in ["sequential", "parallel"]:
+            # x = df_parallel[["seconds"]]
+            # y = df_sequential["seconds"]
+            df_tmp = df[(df["strategy"] == strategy) & (df["device"] == device)]
+            x = df_tmp[["num_samples", "num_features"]]
+            y = df_tmp[["seconds"]]
 
+            reg = LinearRegression().fit(x, y)
+            print(f"device {device}, strategy {strategy} - score: {reg.score(x, y)}, coef: {reg.coef_}, incercept: {reg.intercept_}")
+        
+        
+    # fig = px.scatter(df, x="num_samples", y="value", facet_row="variable", facet_col="num_features", trendline="ols").show()
+    fig = px.scatter(df, x="num_samples", y="seconds", facet_row="strategy", facet_col="num_features", trendline="ols", category_orders={"num_features": [5, 10,50,100]})#,
+    fig.update_layout(yaxis_title="Seconds")
+            # category_orders={"day": ["Thur", "Fri", "Sat", "Sun"], "time": ["Lunch", "Dinner"]})
+# fig.show()
+#     fig = make_subplots(rows=2, cols=1)
+#     fig.add_trace(
+#         go.Scatter(x=df_parallel["num_samples"], y=df_parallel["num_features"], size="value"), row=1, col=1
+#     )
+#     fig.add_trace(
+#         go.Scatter(x=df_sequential["num_samples"], y=df_sequential["num_features"], size="value"), row=2, col=1
+#     )
+#     fig.update_layout(height=600, width=800, title_text="Epoch time average to train 10,000 models.")
+    fig.show()
+
+    fig.write_html(analysis_folder / "times.html")
+
+def distance_to_optimals(original_df, df_policies):
+    best_test_df = original_df.sort_values(by=["test_overall_acc"], ascending=False).groupby(["experiment", "dataset", "run"]).head(1).reset_index()
+    best_gap = original_df.sort_values(by=["test_overall_acc"], ascending=False).groupby(["experiment", "dataset", "run"]).head(1000).reset_index()
+    best_gap = best_gap.sort_values(by=["mean_diffs"], ascending=True).groupby(["experiment", "dataset", "run"]).head(1)
+    df_merge = df_policies.merge(best_test_df[["policy", "experiment", "dataset", "run", "test_overall_acc"]], on=["policy", "experiment", "dataset", "run"], suffixes=('', '_best_test'))
+    df_merge = df_merge.merge(best_gap[["policy", "experiment", "dataset", "run", "mean_diffs"]], on=["policy", "experiment", "dataset", "run"], suffixes=('', '_best_gap'))
+
+    df_merge["distance_to_test_oracle"] = (df_merge["test_overall_acc_best_test"] - df_merge["test_overall_acc"]).abs()
+    df_merge["distance_to_best_mean_diffs"] =  (df_merge["mean_diffs_best_gap"] - df_merge["mean_diffs"]).abs()
+
+    fig = px.scatter(
+            df_merge.groupby(["policy"]).mean().reset_index(),
+            x="distance_to_best_mean_diffs",
+            y="distance_to_test_oracle",
+            color="policy",
+            size="num_neurons"
+            # symbol="policy",
+            # facet_row="policy",
+        )
+    fig.write_html(analysis_folder / "distance_to_bests.html")
+
+    fig = px.scatter(
+            df_merge.groupby(["policy"]).mean().reset_index(),
+            x="holdout_overall_acc",
+            y="test_overall_acc",
+            color="policy",
+            size="num_neurons"
+            # symbol="policy",
+            # facet_row="policy",
+        )
+    fig.write_html(analysis_folder / "mean_holdout_test__policy.html")
+
+    fig = px.box(
+        df_merge,#.groupby(["policy"]),#.mean().reset_index(),
+        y="distance_to_test_oracle",
+        # y="distance_to_best_mean_diffs",
+        color="policy",
+        # size="num_neurons"
+        # symbol="policy",
+        # facet_row="policy",
+    )
+    # order = df_policies.groupby(["policy"]).median().sort_values(by=["test_overall_acc"]).reset_index()["policy"].values.tolist()
+    fig.write_html(analysis_folder / "policy_boxplots.html")
+
+    # fig = make_subplots(1, 1)
+    # fig.add_trace(
+    #     go.Scatter(x=optimal_gap_model, y=df_parallel["num_features"], size="value"), row=1, col=1
+    # )
+    # fig = px.scatter(df_gap, x="num_samples", y="seconds", facet_row="strategy", facet_col="num_features", trendline="ols", category_orders={"num_features": [5, 10,50,100]})#,
+
+def sbss_vs_nosbss_plots(df_policies):
+    fig = px.box(
+        df_policies,#.groupby(["policy"]),#.mean().reset_index(),
+        y="test_overall_acc",
+        x="policy",
+        color="experiment",
+        
+        # size="num_neurons"
+        # symbol="policy",
+        # facet_row="policy",
+    )
+    # order = df_policies.groupby(["policy"]).median().sort_values(by=["test_overall_acc"]).reset_index()["policy"].values.tolist()
+    fig.write_html(analysis_folder / "sbss_vs_nosbss.html")
+
+
+    fig = px.scatter(
+            df_policies.groupby(["experiment", "policy"]).mean().reset_index(),
+            x="holdout_overall_acc",
+            y="test_overall_acc",
+            color="policy",
+            size="num_neurons",
+            symbol="experiment",
+            # facet_row="policy",
+        )
+    fig.write_html(analysis_folder / "sbss_vs_nosbss_mean_holdout_test__policy.html")
+
+
+    d = df_policies.groupby(["experiment", "policy"]).mean().reset_index()
+    d2 = d.pivot_table(["train_overall_acc", "validation_overall_acc", "test_overall_acc", "num_neurons", "mean_diffs"], ["policy"], "experiment")
+    d2.to_csv(analysis_folder / "sbss_vs_nosbss.csv")
+
+# df_times = load_df_times()
+# plot_times(df_times)
 df = load_df()
+apply_policies(df)
+df_policies = load_df_policies()
 
 # print(df.shape)
 
@@ -396,7 +578,12 @@ df = load_df()
 
 # num_models(df)
 
-df_policies = apply_policies(df)
+# df_policies = apply_policies(df)
+
+sbss_vs_nosbss_plots(df_policies)
+
+
+distance_to_optimals(df, df_policies)
 plot_policies(df_policies)
 
 plot_box_policies(df_policies)
