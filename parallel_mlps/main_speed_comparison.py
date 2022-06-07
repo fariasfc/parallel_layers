@@ -44,6 +44,7 @@ def test_sequential(
     test_dataloader,
     pmlps,
     cfg: AutoConstructiveConfig,
+    with_gradients = True,
 ):
     in_features = pmlps.in_features
     out_features = pmlps.out_features
@@ -65,30 +66,29 @@ def test_sequential(
         optimizer = SGD(params=model.parameters(), lr=cfg.model.learning_rate)
         loss_function = nn.CrossEntropyLoss()
 
+
         for epoch in range(cfg.training.num_epochs):
-            start = perf_counter()
-            # model.train()
-            for (x, y) in train_dataloader:
-                optimizer.zero_grad()
-                p = model(x)
-                l = loss_function(p, y)
-                l.backward()
-                optimizer.step()
-            end = perf_counter()
+            model.train()
+            if with_gradients:
+                start = perf_counter()
+                for (x, y) in train_dataloader:
+                    optimizer.zero_grad()
+                    p = model(x)
+                    l = loss_function(p, y)
+                    l.backward()
+                    optimizer.step()
+                end = perf_counter()
+            else:
+                model.eval()
+                with torch.no_grad():
+                    start = perf_counter()
+                    for (x, y) in train_dataloader:
+                        p = model(x)
+                        loss_function(p, y)
+                    end = perf_counter()
+
             if epoch >= 2:
                 sequential_etas.append(end-start)
-
-            # model.eval()
-            # with torch.no_grad():
-            #     if validation_dataloader is not None:
-            #         for (x, y) in validation_dataloader:
-            #             p = model(x)
-            #             loss_function(p, y)
-
-            #     if test_dataloader is not None:
-            #         for (x, y) in test_dataloader:
-            #             p = model(x)
-            #             loss_function(p, y)
 
     average_eta = np.sum(sequential_etas)/(cfg.training.num_epochs-2)
     logger.info(f"Sequential: Each epoch took on average ({len(sequential_etas)} recorded epochs*models) {average_eta} per epoch to train {i} models for {cfg.training.num_epochs-2} epochs")
@@ -96,13 +96,16 @@ def test_sequential(
 
 @hydra.main(config_path="conf", config_name="config")
 def main_sequential_parallel(cfg: AutoConstructiveConfig) -> None:
-    num_featues_list = [5, 10, 50, 100]
+    num_features_list = [5, 10, 50, 100]
     num_samples_list = [100, 1000, 10000]
-    # num_featues_list = [5, 10]
+    num_features_list = [100, 50, 10, 5]
+    num_samples_list = [10000, 1000, 100]
+    # num_features_list = [5, 10]
     # num_samples_list = [10, 100]
     num_epochs_list = [10]
     d = []
-    for num_features in num_featues_list:
+    with_gradients = True
+    for num_features in num_features_list:
         for num_samples in num_samples_list:
             x_train = torch.randn(num_samples, num_features)
             y_train = torch.randint(low=0, high=1, size=(num_samples,))
@@ -160,38 +163,55 @@ def main_sequential_parallel(cfg: AutoConstructiveConfig) -> None:
                 dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=cfg.training.batch_size)
                 parallel_etas = []
                 for epoch in range(cfg.training.num_epochs):
-                    start = perf_counter()
-                    for x, y in dataloader:
-                        x = x.to(cfg.model.device)
-                        y = y.to(cfg.model.device)
+                    pmlps.train()
+                    if with_gradients:
+                        start = perf_counter()
+                        for x, y in dataloader:
+                            #x = x.to(cfg.model.device)
+                            #y = y.to(cfg.model.device)
 
-                        if optimizer:
                             optimizer.zero_grad()
 
-                        outputs = pmlps(x)  # [batch_size, num_models, out_features]
+                            outputs = pmlps(x)  # [batch_size, num_models, out_features]
 
-                        individual_losses = pmlps.calculate_loss(
-                            loss_func=loss_function, preds=outputs, target=y
-                        )
+                            individual_losses = pmlps.calculate_loss(
+                                loss_func=loss_function, preds=outputs, target=y
+                            )
 
-                        loss = individual_losses.mean(
-                            0
-                        )  # [batch_size, num_models] -> [num_models]
-                        # if not_exhausted_models is not None:
-                        #     loss = loss * not_exhausted_models
+                            loss = individual_losses.mean(
+                                0
+                            )  # [batch_size, num_models] -> [num_models]
 
-                        loss = loss.sum()  #  [num_models]-> []
+                            loss = loss.sum()  #  [num_models]-> []
 
-                        loss.backward()
-                        optimizer.step()
-                    end = perf_counter()
+                            loss.backward()
+                            optimizer.step()
+                        end = perf_counter()
+                    else:
+                        pmlps.eval()
+                        with torch.no_grad():
+                            start = perf_counter()
+                            for x, y in dataloader:
+                                outputs = pmlps(x)  # [batch_size, num_models, out_features]
+
+                                individual_losses = pmlps.calculate_loss(
+                                    loss_func=loss_function, preds=outputs, target=y
+                                )
+
+                                loss = individual_losses.mean(
+                                    0
+                                )  # [batch_size, num_models] -> [num_models]
+
+                                loss = loss.sum()  #  [num_models]-> []
+                            end = perf_counter()
+
                     if epoch >= 2:
                         parallel_etas.append(end-start)
 
                 average_eta_parallel = np.sum(parallel_etas)/(cfg.training.num_epochs-2)
                 logger.info(f"Parallel: Each epoch took on average  ({len(parallel_etas)} recorded epochs) {average_eta_parallel} to train {pmlps.num_unique_models} models for {cfg.training.num_epochs-2} epochs")
 
-                average_eta_sequential = test_sequential(train_dataloader=dataloader, validation_dataloader=None, test_dataloader=None, pmlps=pmlps, cfg=cfg)
+                average_eta_sequential = test_sequential(train_dataloader=dataloader, validation_dataloader=None, test_dataloader=None, pmlps=pmlps, cfg=cfg, with_gradients=with_gradients)
                 d.append({
                     "num_samples": num_samples,
                     "num_features": num_features,
@@ -209,7 +229,7 @@ def main_sequential_parallel(cfg: AutoConstructiveConfig) -> None:
             pmlps = None
     df = pd.DataFrame(d)
     df["parallel/sequential"] = df["parallel"]/df["sequential"]
-    df_path = Path(f"times_{cfg.model.device}.csv")
+    df_path = Path(f"times_{cfg.model.device}_with_gradients_{with_gradients}.csv")
     print(f"Saving df to {df_path.absolute()}")
     df.to_csv(df_path)
     print(df)
