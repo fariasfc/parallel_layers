@@ -99,87 +99,99 @@ def main_sequential_parallel(cfg: AutoConstructiveConfig) -> None:
     num_features_list = [5, 10, 50, 100]
     num_samples_list = [100, 1000, 10000]
     num_features_list = [100, 50, 10, 5]
-    num_samples_list = [10000, 100]
+    num_samples_list = [10000, 1000, 100]
     # num_features_list = [5, 10]
     # num_samples_list = [10, 100]
     num_epochs_list = [10]
     d = []
-    with_jit_list = [False]
     with_gradients = True
     for num_features in num_features_list:
         for num_samples in num_samples_list:
-            for with_jit in with_jit_list:
-                x_train = torch.randn(num_samples, num_features)
-                y_train = torch.randint(low=0, high=1, size=(num_samples,))
-                x_validation = torch.randn(64, num_features)
-                y_validation = torch.randint(low=0, high=1, size=(64,))
-                x_test = torch.randn(64, num_features)
-                y_test = torch.randint(low=0, high=1, size=(64,))
+            x_train = torch.randn(num_samples, num_features)
+            y_train = torch.randint(low=0, high=1, size=(num_samples,))
+            x_validation = torch.randn(64, num_features)
+            y_validation = torch.randint(low=0, high=1, size=(64,))
+            x_test = torch.randn(64, num_features)
+            y_test = torch.randint(low=0, high=1, size=(64,))
 
-                if cfg.model.all_data_to_device:
-                    x_train = x_train.to(cfg.model.device)
-                    y_train = y_train.to(cfg.model.device)
-                    if x_validation is not None:
-                        x_validation = x_validation.to(cfg.model.device)
-                        y_validation = y_validation.to(cfg.model.device)
-                    if x_test is not None:
-                        x_test = x_test.to(cfg.model.device)
-                        y_test = y_test.to(cfg.model.device)
+            if cfg.model.all_data_to_device:
+                x_train = x_train.to(cfg.model.device)
+                y_train = y_train.to(cfg.model.device)
+                if x_validation is not None:
+                    x_validation = x_validation.to(cfg.model.device)
+                    y_validation = y_validation.to(cfg.model.device)
+                if x_test is not None:
+                    x_test = x_test.to(cfg.model.device)
+                    y_test = y_test.to(cfg.model.device)
 
-                for num_epochs in num_epochs_list:
-                    print(f"Simulations with num_features={num_features}, num_samples={num_samples}, num_epochs={num_epochs}")
-                    cfg.training.num_epochs = num_epochs+2
+            for num_epochs in num_epochs_list:
+                print(f"Simulations with num_features={num_features}, num_samples={num_samples}, num_epochs={num_epochs}")
+                cfg.training.num_epochs = num_epochs+2
 
-                    (
-                        hidden_neuron__model_id,
-                        output__model_id,
-                        output__architecture_id,
-                        output__repetition,
-                        output__activation,
-                    ) = build_model_ids(
-                        cfg.model.repetitions,
-                        resolve_activations(cfg.model.activations),
-                        cfg.model.min_neurons,
-                        cfg.model.max_neurons,
-                        cfg.model.step_neurons,
-                    )
+                (
+                    hidden_neuron__model_id,
+                    output__model_id,
+                    output__architecture_id,
+                    output__repetition,
+                    output__activation,
+                ) = build_model_ids(
+                    cfg.model.repetitions,
+                    resolve_activations(cfg.model.activations),
+                    cfg.model.min_neurons,
+                    cfg.model.max_neurons,
+                    cfg.model.step_neurons,
+                )
 
-                    in_features = x_train.shape[1]
-                    out_features = len(y_train.unique())
+                in_features = x_train.shape[1]
+                out_features = len(y_train.unique())
 
-                    pmlps = ParallelMLPs(
-                        in_features,
-                        out_features,
-                        hidden_neuron__model_id,
-                        output__model_id,
-                        output__architecture_id,
-                        output__repetition,
-                        None,
-                        None,
-                        resolve_activations(cfg.model.activations),
-                        device=cfg.model.device
-                    ).to(cfg.model.device)
+                pmlps = ParallelMLPs(
+                    in_features,
+                    out_features,
+                    hidden_neuron__model_id,
+                    output__model_id,
+                    output__architecture_id,
+                    output__repetition,
+                    None,
+                    None,
+                    resolve_activations(cfg.model.activations),
+                    device=cfg.model.device
+                ).to(cfg.model.device)
+                optimizer = SGD(pmlps.parameters(),lr=cfg.model.learning_rate)
+                loss_function=resolve_loss_function(cfg.model.loss_function)
+                loss_function.reduction = "none"
+                dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=cfg.training.batch_size)
+                parallel_etas = []
+                for epoch in range(cfg.training.num_epochs):
+                    pmlps.train()
+                    if with_gradients:
+                        start = perf_counter()
+                        for x, y in dataloader:
+                            #x = x.to(cfg.model.device)
+                            #y = y.to(cfg.model.device)
 
-                    # if with_jit:
-                    #     pmlps = torch.jit.trace(pmlps, x_train[:cfg.training.batch_size, :])
+                            optimizer.zero_grad()
 
-                        # pmlps = torch.jit.script(pmlps)
+                            outputs = pmlps(x)  # [batch_size, num_models, out_features]
 
-                    optimizer = SGD(pmlps.parameters(),lr=cfg.model.learning_rate)
-                    loss_function=resolve_loss_function(cfg.model.loss_function)
-                    loss_function.reduction = "none"
-                    dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=cfg.training.batch_size)
-                    parallel_etas = []
-                    for epoch in range(cfg.training.num_epochs):
-                        pmlps.train()
-                        if with_gradients:
+                            individual_losses = pmlps.calculate_loss(
+                                loss_func=loss_function, preds=outputs, target=y
+                            )
+
+                            loss = individual_losses.mean(
+                                0
+                            )  # [batch_size, num_models] -> [num_models]
+
+                            loss = loss.sum()  #  [num_models]-> []
+
+                            loss.backward()
+                            optimizer.step()
+                        end = perf_counter()
+                    else:
+                        pmlps.eval()
+                        with torch.no_grad():
                             start = perf_counter()
                             for x, y in dataloader:
-                                #x = x.to(cfg.model.device)
-                                #y = y.to(cfg.model.device)
-
-                                optimizer.zero_grad()
-
                                 outputs = pmlps(x)  # [batch_size, num_models, out_features]
 
                                 individual_losses = pmlps.calculate_loss(
@@ -191,50 +203,30 @@ def main_sequential_parallel(cfg: AutoConstructiveConfig) -> None:
                                 )  # [batch_size, num_models] -> [num_models]
 
                                 loss = loss.sum()  #  [num_models]-> []
-
-                                loss.backward()
-                                optimizer.step()
                             end = perf_counter()
-                        else:
-                            pmlps.eval()
-                            with torch.no_grad():
-                                start = perf_counter()
-                                for x, y in dataloader:
-                                    outputs = pmlps(x)  # [batch_size, num_models, out_features]
 
-                                    individual_losses = pmlps.calculate_loss(
-                                        loss_func=loss_function, preds=outputs, target=y
-                                    )
+                    if epoch >= 2:
+                        parallel_etas.append(end-start)
 
-                                    loss = individual_losses.mean(
-                                        0
-                                    )  # [batch_size, num_models] -> [num_models]
+                average_eta_parallel = np.sum(parallel_etas)/(cfg.training.num_epochs-2)
+                logger.info(f"Parallel: Each epoch took on average  ({len(parallel_etas)} recorded epochs) {average_eta_parallel} to train {pmlps.num_unique_models} models for {cfg.training.num_epochs-2} epochs")
 
-                                    loss = loss.sum()  #  [num_models]-> []
-                                end = perf_counter()
-
-                        if epoch >= 2:
-                            parallel_etas.append(end-start)
-
-                    average_eta_parallel = np.sum(parallel_etas)/(cfg.training.num_epochs-2)
-                    logger.info(f"Parallel: Each epoch took on average  ({len(parallel_etas)} recorded epochs) {average_eta_parallel} to train")#{pmlps.num_unique_models} models for {cfg.training.num_epochs-2} epochs")
-
-                    average_eta_sequential = test_sequential(train_dataloader=dataloader, validation_dataloader=None, test_dataloader=None, pmlps=pmlps, cfg=cfg, with_gradients=with_gradients)
-                    d.append({
-                        "num_samples": num_samples,
-                        "num_features": num_features,
-                        "min_neurons": cfg.model.min_neurons,
-                        "max_neurons": cfg.model.max_neurons,
-                        "epochs": cfg.training.num_epochs,
-                        "num_models": pmlps.num_unique_models,
-                        "activation_functions": cfg.model.activations,
-                        "repetitions": cfg.model.repetitions,
-                        "sequential": average_eta_sequential,
-                        "parallel": average_eta_parallel,
-                        "device": cfg.model.device,
-                    })
-                del pmlps
-                pmlps = None
+                average_eta_sequential = test_sequential(train_dataloader=dataloader, validation_dataloader=None, test_dataloader=None, pmlps=pmlps, cfg=cfg, with_gradients=with_gradients)
+                d.append({
+                    "num_samples": num_samples,
+                    "num_features": num_features,
+                    "min_neurons": cfg.model.min_neurons,
+                    "max_neurons": cfg.model.max_neurons,
+                    "epochs": cfg.training.num_epochs,
+                    "num_models": pmlps.num_unique_models,
+                    "activation_functions": cfg.model.activations,
+                    "repetitions": cfg.model.repetitions,
+                    "sequential": average_eta_sequential,
+                    "parallel": average_eta_parallel,
+                    "device": cfg.model.device,
+                })
+            del pmlps
+            pmlps = None
     df = pd.DataFrame(d)
     df["parallel/sequential"] = df["parallel"]/df["sequential"]
     df_path = Path(f"times_{cfg.model.device}_with_gradients_{with_gradients}.csv")
