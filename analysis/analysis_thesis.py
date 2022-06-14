@@ -1,4 +1,5 @@
 from sklearn.linear_model import LinearRegression
+from scipy.stats import wilcoxon, ttest_rel, ttest_ind
 
 
 import pandas as pd
@@ -13,14 +14,13 @@ from tqdm import tqdm
 from pathlib import Path
 import pymcdm
 
-
 use_mcdm = True
 metric = "overall_acc"
-metric = "matthews_corrcoef"
 train_metric = f"train_{metric}"
 validation_metric = f"validation_{metric}"
 holdout_metric = f"holdout_{metric}"
 test_metric = f"test_{metric}"
+# metric = "matthews_corrcoef"
 # folder that contains the nosbss.csv
 folder = Path("experiments/exp0090/")
 policies_folder = folder / f"{metric}/policies"
@@ -43,27 +43,39 @@ datasets = [
     "wdbc",
     "satimage",
     "vowel(2)",
-    "musk",
+    # "musk",
 ]
 experiments = [
     "exp0090_politica_1_oracle_1m1l",
-    # "exp0090_politica_1_oracle_1m1l_nosbss",
+    "exp0090_politica_1_oracle_1m1l_nosbss",
 ]
 
 policies = [
     "oracle",
     "holdout",
-    "pareto_second_best_holdout_num_neurons",
-    "validation",
-    "0.01_smallest_mean_dist_holdout",
-    "smallest_euclidian_holdout_test_utopic",
-    "best_holdout_in_best_architecture_10fold",
+    "Train",
+    "Validation",
+    # "pareto_second_best_holdout_num_neurons",
+    # "0.01_smallest_mean_dist_holdout",
+    # "smallest_euclidian_train_holdout_test_utopic",
+    # "smallest_euclidian_holdout_test_utopic",
+    # "best_holdout_in_best_architecture_10fold",
+    "Best Architectural Holdout",
+    "Best Architectural Validation",
+    "Best Architectural Holdout Over All Runs",
+    "Best Architectural Validation Over All Runs",
+    "Utopic Euclidean Train Validation Holdout Test",
+    "Utopic Euclidean Train Validation Holdout",
+    "topsis_pareto_oracle",
+    "topsis_pareto_holdout",
 ]
 
 if use_mcdm:
     policies += [
         "topsis_pareto_oracle",
         "topsis_pareto_holdout",
+        "topsis_pareto_validation",
+        "topsis_pareto_train",
         "topsis_pareto_holdout_no_epochs",
         "topsis_pareto_holdout_no_num_neurons",
         "topsis_pareto_holdout_weighted_neu-p3_epc-p1_hold-p6",
@@ -85,6 +97,9 @@ if use_mcdm:
         "mairca_pareto_holdout_reverse",
         "moora_pareto_holdout",
         "moora_pareto_holdout_inverse",
+        "wilcoxon_holdout",
+        "ttest_ind_holdout",
+        "ttest_rel_holdout",
     ]
     analysis_folder = folder / f"{metric}/plots"
 else:
@@ -97,9 +112,6 @@ policies_folder.mkdir(parents=True, exist_ok=True)
 def csv_to_parquet():
     df = pd.read_csv(df_path)
     df.to_parquet(df_parquet_path)
-
-
-csv_to_parquet()
 
 
 def load_df():
@@ -117,13 +129,19 @@ def load_df():
     print(df.keys())
     df = df[(df["experiment"].isin(experiments)) & (df["dataset"].isin(datasets))]
     print(f"df.shape: {df.shape}")
-    print(f"datase: {df['dataset'].unique()}")
 
     return df
 
 
-def load_df_policies():
+def load_df_policies(only_sbss=True):
+    experiments = [
+        "exp0090_politica_1_oracle_1m1l",
+    ]
+    if not only_sbss:
+        experiments.append("exp0090_politica_1_oracle_1m1l_nosbss")
+
     policies_files = policies_folder.glob("**/*.csv")
+    print("prepolicy")
     df_policies = pd.concat(
         [
             pd.read_csv(policy_file_path)
@@ -131,6 +149,7 @@ def load_df_policies():
             if policy_file_path.name.replace(".csv", "") in policies
         ]
     )
+    print("postpolicy")
 
     df_policies = df_policies[
         (df_policies["experiment"].isin(experiments))
@@ -138,21 +157,81 @@ def load_df_policies():
     ]
 
     print(f"df_policies.shape: {df_policies.shape}")
+    print(f"policies: {df_policies['policy'].unique()}")
     return df_policies
 
 
 def load_df_times():
-    df_times_cuda = pd.read_csv(Path("experiments/times_cuda/times_cuda.csv"))
-    df_times_cpu = pd.read_csv(Path("experiments/times_cpu/times_cpu.csv"))
+    df_paths = list(Path("experiments").glob("*times*/*.csv"))
+    print(df_paths)
+    dfs = []
+    for df_path in df_paths:
+        if "bs32" in str(df_path.absolute()):
+            batch = 32
+        if "bs128" in str(df_path.absolute()):
+            batch = 128
+        if "bs256" in str(df_path.absolute()):
+            batch = 256
+        if "cpu" in str(df_path.absolute()):
+            device = "cpu"
+        else:
+            device = "cuda"
+        # print(f"opening {df_path} with batch {batch} device {device}")
+        tmp_df = pd.read_csv(df_path)
+        tmp_df["parallel/sequential"] *= 100
+        tmp_df = tmp_df.drop(
+            columns=[
+                "min_neurons",
+                "max_neurons",
+                "epochs",
+                "repetitions",
+                "activation_functions",
+                "repetitions",
+                "num_models",
+            ]
+        )
+        tmp_df["batch"] = batch
+        tmp_df["device"] = device
+        dfs.append(tmp_df)
     # for df_device_key, df in dfs.items():
     # #,num_samples,num_features,min_neurons,max_neurons,epochs,num_models,activation_functions,repetitions,sequential,parallel,device,parallel/sequential
     #     df = df.drop(columns=["min_neurons", "max_neurons", "epochs", "repetitions", "activation_functions", "repetitions"])
     #     df = df.melt(id_vars=["num_samples", "num_features", "num_models", "device"])
     # df_times_cpu = pd.read_csv(Path("experiments/times_cuda/times_cpu.csv"))
-    df = pd.concat((df_times_cuda, df_times_cpu))
+    df = pd.concat(dfs)
 
     df = df.drop(columns=["Unnamed: 0"])
+    # print(df.columns)
+    df.to_csv(analysis_folder / "all_times.csv")
 
+    return df
+
+
+df_times = load_df_times()
+df_times = df_times.melt(["num_features", "num_samples", "batch", "device"])
+df_times_csv = (
+    df_times[["num_features", "num_samples", "variable", "value", "batch", "device"]]
+    .pivot_table(index=["device", "variable", "num_features", "num_samples", "batch"])
+    .unstack(["num_samples", "batch"])
+    .reindex([100, 1000, 10000], axis=1, level=1)
+    .reindex([32, 128, 256], axis=1, level=2)
+    .reindex(["parallel", "sequential", "parallel/sequential"], level=1)
+).round(3)
+df_times_csv.to_csv(analysis_folder / "df_times_paper.csv")
+# df_times
+# df_times = plot_times(df_times)
+# df_times.unstack("strategy")
+
+# csv_to_parquet()
+
+
+def post_process_dfs(df):
+    df["mean_metrics"] = df[
+        [train_metric, validation_metric, holdout_metric, test_metric]
+    ].mean(axis=1)
+    df["std_metrics"] = df[
+        [train_metric, validation_metric, holdout_metric, test_metric]
+    ].std(axis=1)
     return df
 
 
@@ -277,12 +356,49 @@ def apply_policies(df):
     for policy in policies:
         policy_file_path = policies_folder / f"{policy}.csv"
         if policy_file_path.exists():
+            print(f"{policy_file_path.absolute()} exists.")
             continue
+        print(f"Executing {policy_file_path.absolute()}.")
         choices = []
         for experiment in experiments:
+            pmlps_df_experiment = df[df["experiment"] == experiment]
             for dataset in tqdm(datasets):
-                pmlps_df_dataset = df[df["dataset"] == dataset]
+                pmlps_df_dataset = pmlps_df_experiment[
+                    pmlps_df_experiment["dataset"] == dataset
+                ]
+                # Global == all runs in the dataset
+                df_avg_by_architecture_global = (
+                    pmlps_df_dataset.groupby(["num_neurons", "activation_name"])
+                    .mean()
+                    .reset_index()
+                )
+                best_holdout_architecture_global = (
+                    df_avg_by_architecture_global.sort_values(
+                        by=[holdout_metric, "num_neurons"], ascending=[False, True]
+                    ).iloc[0]
+                )
+                best_validation_architecture_global = (
+                    df_avg_by_architecture_global.sort_values(
+                        by=[validation_metric, "num_neurons"], ascending=[False, True]
+                    ).iloc[0]
+                )
                 for run in runs:
+                    df_avg_by_architecture_run = (
+                        pmlps_df_dataset.groupby(["num_neurons", "activation_name"])
+                        .mean()
+                        .reset_index()
+                    )
+                    best_holdout_architecture_run = (
+                        df_avg_by_architecture_run.sort_values(
+                            by=[holdout_metric, "num_neurons"], ascending=[False, True]
+                        ).iloc[0]
+                    )
+                    best_validation_architecture_run = (
+                        df_avg_by_architecture_run.sort_values(
+                            by=[validation_metric, "num_neurons"],
+                            ascending=[False, True],
+                        ).iloc[0]
+                    )
                     pmlps_df = pmlps_df_dataset[
                         (pmlps_df_dataset["run"] == run)
                         & (pmlps_df_dataset["experiment"] == experiment)
@@ -311,6 +427,57 @@ def apply_policies(df):
                             by=[holdout_metric, "num_neurons"],
                             ascending=[False, True],
                         )
+                    elif policy == "Train":
+                        ranked_pmlps_df = ranked_pmlps_df.sort_values(
+                            by=[train_metric, "num_neurons"],
+                            ascending=[False, True],
+                        )
+                    elif policy == "Validation":
+                        ranked_pmlps_df = ranked_pmlps_df.sort_values(
+                            by=[validation_metric, "num_neurons"],
+                            ascending=[False, True],
+                        )
+                    elif policy == "Best Architectural Validation":
+                        activation = best_validation_architecture_run["activation_name"]
+                        num_neurons = best_validation_architecture_run["num_neurons"]
+                        ranked_pmlps_df = ranked_pmlps_df[
+                            (ranked_pmlps_df["activation_name"] == activation)
+                            & (ranked_pmlps_df["num_neurons"] == num_neurons)
+                        ].sort_values(
+                            by=[validation_metric, "num_neurons"],
+                            ascending=[False, True],
+                        )
+                    elif policy == "Best Architectural Holdout":
+                        activation = best_holdout_architecture_run["activation_name"]
+                        num_neurons = best_holdout_architecture_run["num_neurons"]
+                        ranked_pmlps_df = ranked_pmlps_df[
+                            (ranked_pmlps_df["activation_name"] == activation)
+                            & (ranked_pmlps_df["num_neurons"] == num_neurons)
+                        ].sort_values(
+                            by=[holdout_metric, "num_neurons"], ascending=[False, True]
+                        )
+                    elif policy == "Best Architectural Holdout Over All Runs":
+                        activation = best_holdout_architecture_global["activation_name"]
+                        num_neurons = best_holdout_architecture_global["num_neurons"]
+                        ranked_pmlps_df = ranked_pmlps_df[
+                            (ranked_pmlps_df["activation_name"] == activation)
+                            & (ranked_pmlps_df["num_neurons"] == num_neurons)
+                        ].sort_values(
+                            by=[holdout_metric, "num_neurons"], ascending=[False, True]
+                        )
+                    elif policy == "Best Architectural Validation Over All Runs":
+                        activation = best_validation_architecture_global[
+                            "activation_name"
+                        ]
+                        num_neurons = best_validation_architecture_global["num_neurons"]
+                        ranked_pmlps_df = ranked_pmlps_df[
+                            (ranked_pmlps_df["activation_name"] == activation)
+                            & (ranked_pmlps_df["num_neurons"] == num_neurons)
+                        ].sort_values(
+                            by=[validation_metric, "num_neurons"],
+                            ascending=[False, True],
+                        )
+
                     elif policy == "pareto_second_best_holdout_num_neurons":
                         mcdm_tuples = [
                             ("num_neurons", -1),
@@ -332,11 +499,6 @@ def apply_policies(df):
                             ranked_pmlps_df = (
                                 ranked_pmlps_df.iloc[1:].copy().reset_index()
                             )
-                    elif policy == "validation":
-                        ranked_pmlps_df = ranked_pmlps_df.sort_values(
-                            by=[validation_metric, "num_neurons"],
-                            ascending=[False, True],
-                        )
                     elif policy == "best_holdout_in_best_architecture_10fold":
                         best_architecture = (
                             ranked_pmlps_df.groupby(["architecture_id"])
@@ -555,6 +717,30 @@ def apply_policies(df):
                             only_pareto_solutions=True,
                             sort_by_rank=True,
                         )
+                    elif policy == "topsis_pareto_validation":
+                        mcdm_tuples = [
+                            ("num_neurons", -1),
+                            ("epoch", 1),
+                            (validation_metric, 1),
+                        ]
+                        ranked_pmlps_df = get_ranked_pmlps_df(
+                            pmlps_df,
+                            mcdm_tuples,
+                            only_pareto_solutions=True,
+                            sort_by_rank=True,
+                        )
+                    elif policy == "topsis_pareto_train":
+                        mcdm_tuples = [
+                            ("num_neurons", -1),
+                            ("epoch", 1),
+                            (train_metric, 1),
+                        ]
+                        ranked_pmlps_df = get_ranked_pmlps_df(
+                            pmlps_df,
+                            mcdm_tuples,
+                            only_pareto_solutions=True,
+                            sort_by_rank=True,
+                        )
                     elif policy == "topsis_pareto_holdout_no_epochs_no_num_neurons":
                         mcdm_tuples = [
                             ("num_neurons", -1),
@@ -705,11 +891,11 @@ def apply_policies(df):
                         ranked_pmlps_df = ranked_pmlps_df.drop(
                             columns=["euclidian_to_utopic"]
                         )
-                    elif policy == "smallest_euclidian_holdout_test_utopic":
+                    elif policy == "smallest_euclidian_train_holdout_test_utopic":
                         overall_accs = ranked_pmlps_df[
-                            [test_metric, holdout_metric]
+                            [train_metric, test_metric, holdout_metric]
                         ].values
-                        utopic_accs = np.array([[1.0, 1.0]])
+                        utopic_accs = np.array([[1.0, 1.0, 1.0]])
                         ranked_pmlps_df.loc[:, "euclidian_to_utopic"] = np.sqrt(
                             ((overall_accs - utopic_accs) ** 2).sum(1)
                         )
@@ -720,7 +906,41 @@ def apply_policies(df):
                         ranked_pmlps_df = ranked_pmlps_df.drop(
                             columns=["euclidian_to_utopic"]
                         )
-
+                    elif policy == "Utopic Euclidean Train Validation Holdout Test":
+                        overall_accs = ranked_pmlps_df[
+                            [
+                                train_metric,
+                                validation_metric,
+                                test_metric,
+                                holdout_metric,
+                            ]
+                        ].values
+                        utopic_accs = np.array([[1.0, 1.0, 1.0, 1.0]])
+                        ranked_pmlps_df.loc[:, "euclidian_to_utopic"] = np.sqrt(
+                            ((overall_accs - utopic_accs) ** 2).sum(1)
+                        )
+                        ranked_pmlps_df = ranked_pmlps_df.sort_values(
+                            by=["euclidian_to_utopic", "num_neurons"],
+                            ascending=[True, True],
+                        )
+                        ranked_pmlps_df = ranked_pmlps_df.drop(
+                            columns=["euclidian_to_utopic"]
+                        )
+                    elif policy == "Utopic Euclidean Train Validation Holdout":
+                        overall_accs = ranked_pmlps_df[
+                            [train_metric, validation_metric, holdout_metric]
+                        ].values
+                        utopic_accs = np.array([[1.0, 1.0, 1.0]])
+                        ranked_pmlps_df.loc[:, "euclidian_to_utopic"] = np.sqrt(
+                            ((overall_accs - utopic_accs) ** 2).sum(1)
+                        )
+                        ranked_pmlps_df = ranked_pmlps_df.sort_values(
+                            by=["euclidian_to_utopic", "num_neurons"],
+                            ascending=[True, True],
+                        )
+                        ranked_pmlps_df = ranked_pmlps_df.drop(
+                            columns=["euclidian_to_utopic"]
+                        )
                     elif policy == "all_except_test":
                         mcdm_tuples = [
                             ("num_neurons", -1),
@@ -766,6 +986,67 @@ def apply_policies(df):
                             only_pareto_solutions=True,
                             sort_by_rank=True,
                         )
+                    elif policy in [
+                        "wilcoxon_holdout",
+                        "ttest_ind_holdout",
+                        "ttest_rel_holdout",
+                    ]:
+                        pmlps_df = pmlps_df.sort_values(
+                            by=["num_neurons", "architecture_id", "fold"]
+                        )
+                        architecture_ids = pmlps_df["architecture_id"].unique()
+                        best_arch = architecture_ids[0]
+                        for current_arch in architecture_ids[1:]:
+                            best_metrics = pmlps_df[
+                                pmlps_df["architecture_id"] == best_arch
+                            ][holdout_metric]
+                            current_arch_metrics = pmlps_df[
+                                pmlps_df["architecture_id"] == current_arch
+                            ][holdout_metric]
+                            if np.allclose(
+                                current_arch_metrics.values, best_metrics.values
+                            ):
+                                continue
+                            if policy == "wilcoxon_holdout":
+                                hypothesis_test_method = wilcoxon
+                            elif policy == "ttest_ind_holdout":
+                                hypothesis_test_method = ttest_ind
+                            elif policy == "ttest_rel_holdout":
+                                hypothesis_test_method = ttest_rel
+
+                            # H0: median(best_metrics) == median(current_arch_metrics), Ha: median(best_metrics) != median(current_arch_metrics)
+                            stat, p = hypothesis_test_method(
+                                best_metrics, current_arch_metrics
+                            )
+
+                            alpha = 0.05
+                            if p < alpha:
+                                # The one-sided test has the null hypothesis that the median is positive against the alternative that it is negative (alternative == 'less'), or vice versa (alternative == 'greater.'). https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.wilcoxon.html
+                                # H0: median(best_metrics) - median(current_arch_metrics) >= 0, Ha: median(best_metrics) < median(current_arch_metrics)
+                                stat_alternative, less_p = hypothesis_test_method(
+                                    best_metrics,
+                                    current_arch_metrics,
+                                    alternative="less",
+                                )
+                                if less_p < alpha:
+                                    best_arch = current_arch
+
+                                    if (
+                                        current_arch_metrics.mean()
+                                        < best_metrics.mean()
+                                    ):
+                                        print(
+                                            f"{policy} - current_arch_metrics.mean() ({current_arch_metrics.mean()}) < best_metrics.mean() ({best_metrics.mean()}) and H0 b=c, p-value({p}), H0 b<c: less_p-value ({less_p})"
+                                        )
+                                        # best_arch = current_arch
+                        ranked_pmlps_df = pmlps_df[
+                            pmlps_df["architecture_id"] == best_arch
+                        ].sort_values(by=[holdout_metric], ascending=[False])
+                    else:
+                        raise NotImplementedError(
+                            f"Policy {policy} was not implemented."
+                        )
+
                     choice = ranked_pmlps_df.iloc[0].copy()
                     choice["policy"] = policy
                     choices.append(choice)
@@ -1002,9 +1283,9 @@ def sbss_vs_nosbss_plots(df_policies):
 
 # df_times = load_df_times()
 # plot_times(df_times)
-df = load_df()
-apply_policies(df)
-df_policies = load_df_policies()
+# df = load_df()
+# apply_policies(df)
+# df_policies = load_df_policies()
 
 # print(df.shape)
 
@@ -1016,10 +1297,18 @@ df_policies = load_df_policies()
 
 # df_policies = apply_policies(df)
 
+# sbss_vs_nosbss_plots(df_policies)
+
+
+# distance_to_optimals(df, df_policies)
+# plot_policies(df_policies)
+
+# plot_box_policies(df_policies)
+
+df = load_df()
+apply_policies(df)
+df_policies = load_df_policies()
 sbss_vs_nosbss_plots(df_policies)
 
-
-distance_to_optimals(df, df_policies)
-plot_policies(df_policies)
-
-plot_box_policies(df_policies)
+# df = post_process_dfs(df)
+# df_policies = post_process_dfs(df_policies)
