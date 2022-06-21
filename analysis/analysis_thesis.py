@@ -1,3 +1,4 @@
+from copy import deepcopy
 from sklearn.linear_model import LinearRegression
 from scipy.stats import wilcoxon, ttest_rel, ttest_ind
 
@@ -14,7 +15,7 @@ from tqdm import tqdm
 from pathlib import Path
 import pymcdm
 
-use_mcdm = True
+use_mcdm = False
 metric = "overall_acc"
 train_metric = f"train_{metric}"
 validation_metric = f"validation_{metric}"
@@ -47,33 +48,42 @@ datasets = [
 ]
 experiments = [
     "exp0090_politica_1_oracle_1m1l",
-    "exp0090_politica_1_oracle_1m1l_nosbss",
+    # "exp0090_politica_1_oracle_1m1l_nosbss",
 ]
 
 policies = [
-    "oracle",
-    "holdout",
+    "Test",
     "Train",
     "Validation",
+    "Holdout",
     # "pareto_second_best_holdout_num_neurons",
     # "0.01_smallest_mean_dist_holdout",
     # "smallest_euclidian_train_holdout_test_utopic",
     # "smallest_euclidian_holdout_test_utopic",
     # "best_holdout_in_best_architecture_10fold",
-    "Best Architectural Holdout",
-    "Best Architectural Validation",
-    "Best Architectural Holdout Over All Runs",
-    "Best Architectural Validation Over All Runs",
-    "Utopic Euclidean Train Validation Holdout Test",
-    "Utopic Euclidean Train Validation Holdout",
-    "topsis_pareto_oracle",
-    "topsis_pareto_holdout",
+    "TTVHT",
+    "TTVH",
+    "TTVHTN",
+    "TTVHN",
+    "TTVHTNE",
+    "TTVHTNB",
+    "TTVHNE",
+    "TTVHNB",
+    # "Best Architectural Holdout",
+    # "Best Architectural Validation",
+    # "Best Architectural Holdout Over All Runs",
+    # "Best Architectural Validation Over All Runs",
+    # "Utopic Euclidean Train Validation Holdout Test",
+    # "Utopic Euclidean Train Validation Holdout",
+    # "topsis_pareto_oracle",
+    # "topsis_pareto_holdout",
 ]
 
 if use_mcdm:
     policies += [
         "topsis_pareto_oracle",
         "topsis_pareto_holdout",
+        "topsis_pareto_holdout_oracle",
         "topsis_pareto_validation",
         "topsis_pareto_train",
         "topsis_pareto_holdout_no_epochs",
@@ -142,13 +152,27 @@ def load_df_policies(only_sbss=True):
 
     policies_files = policies_folder.glob("**/*.csv")
     print("prepolicy")
-    df_policies = pd.concat(
-        [
-            pd.read_csv(policy_file_path)
-            for policy_file_path in policies_files
-            if policy_file_path.name.replace(".csv", "") in policies
-        ]
-    )
+    dfs = []
+    for policy_file_path in policies_files:
+        if policy_file_path.name.replace(
+            ".csv", ""
+        ) in policies and policy_file_path.parent.name in [
+            "Individual",
+            "Local",
+            "Global",
+        ]:
+            tmp_df = pd.read_csv(policy_file_path)
+            dfs.append(tmp_df)
+
+    df_policies = pd.concat(dfs)
+    # df_policies = pd.concat(
+    #     [
+    #         pd.read_csv(policy_file_path)
+    #         for policy_file_path in policies_files
+    #         if policy_file_path.name.replace(".csv", "") in policies
+    #         and policy_file_path.parent.name in ["Individual", "Local", "Global"]
+    #     ]
+    # )
     print("postpolicy")
 
     df_policies = df_policies[
@@ -717,6 +741,19 @@ def apply_policies(df):
                             only_pareto_solutions=True,
                             sort_by_rank=True,
                         )
+                    elif policy == "topsis_pareto_holdout_oracle":
+                        mcdm_tuples = [
+                            ("num_neurons", -1),
+                            ("epoch", 1),
+                            (holdout_metric, 1),
+                            (test_metric, 1),
+                        ]
+                        ranked_pmlps_df = get_ranked_pmlps_df(
+                            pmlps_df,
+                            mcdm_tuples,
+                            only_pareto_solutions=True,
+                            sort_by_rank=True,
+                        )
                     elif policy == "topsis_pareto_validation":
                         mcdm_tuples = [
                             ("num_neurons", -1),
@@ -1054,6 +1091,141 @@ def apply_policies(df):
         df_policy.to_csv(policy_file_path)
 
 
+# def _get_best_architecture(df):
+#     df.groupby(["activation_name", "num_neurons"]).mean().reset_index()
+
+
+def apply_policies_artigo(df):
+    # datasets = df["dataset"].unique()
+    # datasets = ["diabetes", "credit-g"]
+    runs = df["run"].unique()
+
+    for policy in policies:
+        for experiment in experiments:
+            pmlps_df_experiment = df[df["experiment"] == experiment]
+            for group in ["Individual", "Local", "Global"]:
+                choices = []
+                policy_file_path = policies_folder / group / f"{policy}.csv"
+                policy_file_path.parent.mkdir(parents=True, exist_ok=True)
+                if policy_file_path.exists():
+                    print(f"{policy_file_path.absolute()} exists.")
+                    continue
+                print(f"Executing {policy_file_path.absolute()}.")
+                pmlps_grouped = None
+                activation = None
+                num_neurons = None
+                for dataset in tqdm(datasets):
+                    pmlps_df_dataset = pmlps_df_experiment[
+                        pmlps_df_experiment["dataset"] == dataset
+                    ]
+                    # Global == all runs in the dataset
+                    if group == "Global":
+                        pmlps_grouped = (
+                            pmlps_df_dataset.groupby(["num_neurons", "activation_name"])
+                            .mean()
+                            .reset_index()
+                        )
+                    for run in runs:
+                        pmlps_df_run = pmlps_df_dataset[
+                            (pmlps_df_dataset["run"] == run)
+                        ]
+                        if group == "Local":
+                            pmlps_grouped = (
+                                pmlps_df_run.groupby(["num_neurons", "activation_name"])
+                                .mean()
+                                .reset_index()
+                            )
+
+                        if policy == "Train":
+                            mcdm_tuples = [(train_metric, 1), ("num_neurons", -1)]
+                        elif policy == "Validation":
+                            mcdm_tuples = [(validation_metric, 1), ("num_neurons", -1)]
+                        elif policy == "Holdout":
+                            mcdm_tuples = [(holdout_metric, 1), ("num_neurons", -1)]
+                        elif policy == "Test":
+                            mcdm_tuples = [(test_metric, 1), ("num_neurons", -1)]
+                        elif policy.startswith("TTVH"):
+                            mcdm_tuples = [
+                                (train_metric, 1),
+                                (validation_metric, 1),
+                                (holdout_metric, 1),
+                            ]
+                            remaining_policy = deepcopy(policy)
+                            remaining_policy = remaining_policy.replace("TTVH", "")
+                            while len(remaining_policy) > 0:
+                                if remaining_policy[0] == "T":
+                                    mcdm_tuples.append((test_metric, 1))
+                                if remaining_policy[0] == "N":
+                                    mcdm_tuples.append(("num_neurons", -1))
+                                if remaining_policy[0] == "E":
+                                    mcdm_tuples.append(("epoch", 1))
+                                if remaining_policy[0] == "B":
+                                    mcdm_tuples.append(("epoch", -1))
+
+                                remaining_policy = remaining_policy[1:]
+
+                        else:
+                            raise NotImplementedError(
+                                f"Policy {policy} was not implemented."
+                            )
+
+                        sort_values_by = [k for (k, v) in mcdm_tuples]
+                        ascending = [v == -1 for (k, v) in mcdm_tuples]
+                        if pmlps_grouped is None:
+                            if policy.startswith("TTVH"):
+                                ranked_pmlps_df = get_ranked_pmlps_df(
+                                    pmlps_df_run,
+                                    mcdm_tuples,
+                                    only_pareto_solutions=True,
+                                    sort_by_rank=True,
+                                )
+                            else:
+                                ranked_pmlps_df = pmlps_df_run.sort_values(
+                                    by=sort_values_by,
+                                    ascending=ascending,
+                                )
+                        else:
+                            if policy.startswith("TTVH"):
+                                ranked_pmlps_df_grouped = get_ranked_pmlps_df(
+                                    pmlps_grouped,
+                                    mcdm_tuples=mcdm_tuples,
+                                    only_pareto_solutions=True,
+                                    sort_by_rank=True,
+                                )
+                                ranked_pmlps_df = get_ranked_pmlps_df(
+                                    pmlps_df_run,
+                                    mcdm_tuples,
+                                    only_pareto_solutions=False,
+                                    sort_by_rank=True,
+                                )
+                            else:
+                                ranked_pmlps_df = pmlps_df_run.sort_values(
+                                    by=sort_values_by,
+                                    ascending=ascending,
+                                )
+                                ranked_pmlps_df_grouped = pmlps_grouped.sort_values(
+                                    by=sort_values_by, ascending=ascending
+                                )
+                            activation = ranked_pmlps_df_grouped.iloc[0][
+                                "activation_name"
+                            ]
+                            num_neurons = ranked_pmlps_df_grouped.iloc[0]["num_neurons"]
+                            ranked_pmlps_df = ranked_pmlps_df[
+                                (ranked_pmlps_df["activation_name"] == activation)
+                                & (ranked_pmlps_df["num_neurons"] == num_neurons)
+                            ]
+                            pmlps_grouped = None
+
+                        choice = ranked_pmlps_df.iloc[0].copy()
+                        choice["group"] = group
+                        choice["policy"] = policy
+                        choice["mcdm_tuples"] = mcdm_tuples
+                        choices.append(choice)
+                df_policy = pd.DataFrame(choices)
+                print(f"Saving {policy_file_path}")
+                df_policy.to_csv(policy_file_path)
+
+
 def plot_policies(df):
     fig = px.scatter(
         df,
@@ -1281,6 +1453,45 @@ def sbss_vs_nosbss_plots(df_policies):
     d2.to_csv(analysis_folder / "sbss_vs_nosbss.csv")
 
 
+def wilcoxon_compare(df, group_by, column):
+    groups = dict(df.groupby(group_by).indices)
+    # print(groups)
+    rows = []
+    for (k1, i1) in groups.items():
+        g1_vs_others = {g: 0 for (g, _) in groups.items()}
+        for (k2, i2) in groups.items():
+            if (k1, i1) == (k2, i2):
+                continue
+
+            # print(i1)
+            # print(i2)
+
+            x1 = df.iloc[i1][column]
+            x2 = df.iloc[i2][column]
+            # print(k1, k2)
+            # print(len(x1), len(x2))
+
+            stat, p = wilcoxon(x1, x2)
+
+            alpha = 0.05
+            if p < alpha:
+                # The one-sided test has the null hypothesis that the median is positive against the alternative that it is negative (alternative == 'less'), or vice versa (alternative == 'greater.'). https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.wilcoxon.html
+                # H0: median(best_metrics) - median(current_arch_metrics) >= 0, Ha: median(best_metrics) < median(current_arch_metrics)
+                stat_alternative, less_p = wilcoxon(
+                    x1,
+                    x2,
+                    alternative="less",
+                )
+                if less_p < alpha:
+                    g1_vs_others[k2] = -1
+                else:
+                    g1_vs_others[k2] = 1
+        rows.append(g1_vs_others)
+    df = pd.DataFrame(rows, index=groups)
+    df[f"Summary {column}"] = df.sum(1)
+    return df
+
+
 # df_times = load_df_times()
 # plot_times(df_times)
 # df = load_df()
@@ -1305,10 +1516,16 @@ def sbss_vs_nosbss_plots(df_policies):
 
 # plot_box_policies(df_policies)
 
-df = load_df()
-apply_policies(df)
-df_policies = load_df_policies()
-sbss_vs_nosbss_plots(df_policies)
+if __name__ == "__main__":
+    # df = load_df()
+    # # apply_policies(df)
+    # apply_policies_artigo(df)
+    df_policies = load_df_policies()
+    columns = ["group", "policy", "dataset", "run"]
+    comparisons = wilcoxon_compare(
+        df_policies.sort_values(by=columns), ["group", "policy"], "test_overall_acc"
+    )
+    # sbss_vs_nosbss_plots(df_policies)
 
-# df = post_process_dfs(df)
-# df_policies = post_process_dfs(df_policies)
+    # df = post_process_dfs(df)
+    # df_policies = post_process_dfs(df_policies)
