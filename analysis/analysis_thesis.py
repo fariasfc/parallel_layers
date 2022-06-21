@@ -1112,29 +1112,33 @@ def apply_policies_artigo(df):
                     continue
                 print(f"Executing {policy_file_path.absolute()}.")
                 pmlps_grouped = None
-                activation = None
-                num_neurons = None
                 for dataset in tqdm(datasets):
                     pmlps_df_dataset = pmlps_df_experiment[
                         pmlps_df_experiment["dataset"] == dataset
                     ]
-                    # Global == all runs in the dataset
-                    if group == "Global":
-                        pmlps_grouped = (
-                            pmlps_df_dataset.groupby(["num_neurons", "activation_name"])
-                            .mean()
-                            .reset_index()
-                        )
+                    activation = None
+                    num_neurons = None
                     for run in runs:
                         pmlps_df_run = pmlps_df_dataset[
                             (pmlps_df_dataset["run"] == run)
                         ]
-                        if group == "Local":
+                        # Global == all runs in the dataset
+                        if group == "Global":
+                            pmlps_grouped = (
+                                pmlps_df_dataset.groupby(
+                                    ["num_neurons", "activation_name"]
+                                )
+                                .mean()
+                                .reset_index()
+                            )
+                        elif group == "Local":
                             pmlps_grouped = (
                                 pmlps_df_run.groupby(["num_neurons", "activation_name"])
                                 .mean()
                                 .reset_index()
                             )
+                        else:
+                            pmlps_grouped = None
 
                         if policy == "Train":
                             mcdm_tuples = [(train_metric, 1), ("num_neurons", -1)]
@@ -1214,7 +1218,6 @@ def apply_policies_artigo(df):
                                 (ranked_pmlps_df["activation_name"] == activation)
                                 & (ranked_pmlps_df["num_neurons"] == num_neurons)
                             ]
-                            pmlps_grouped = None
 
                         choice = ranked_pmlps_df.iloc[0].copy()
                         choice["group"] = group
@@ -1453,7 +1456,7 @@ def sbss_vs_nosbss_plots(df_policies):
     d2.to_csv(analysis_folder / "sbss_vs_nosbss.csv")
 
 
-def wilcoxon_compare(df, group_by, column):
+def statistical_test(df, group_by, column, method="wilcoxon"):
     groups = dict(df.groupby(group_by).indices)
     # print(groups)
     rows = []
@@ -1466,18 +1469,32 @@ def wilcoxon_compare(df, group_by, column):
             # print(i1)
             # print(i2)
 
-            x1 = df.iloc[i1][column]
-            x2 = df.iloc[i2][column]
+            df1 = df.iloc[i1]
+            df2 = df.iloc[i2]
+
+            if (
+                np.any((df1["dataset"] != df2["dataset"]))
+                or np.any((df1["run"] != df2["run"]))
+                or np.any((df1["experiment"] != df2["experiment"]))
+            ):
+                raise RuntimeError("Mismatch during statistical tests!")
+
+            x1 = df1[column]
+            x2 = df2[column]
             # print(k1, k2)
             # print(len(x1), len(x2))
 
-            stat, p = wilcoxon(x1, x2)
+            if method == "wilcoxon":
+                statistical_method = wilcoxon
+            elif method == "t-student":
+                statistical_method = ttest_rel
+            stat, p = statistical_method(x1, x2)
 
             alpha = 0.05
             if p < alpha:
                 # The one-sided test has the null hypothesis that the median is positive against the alternative that it is negative (alternative == 'less'), or vice versa (alternative == 'greater.'). https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.wilcoxon.html
                 # H0: median(best_metrics) - median(current_arch_metrics) >= 0, Ha: median(best_metrics) < median(current_arch_metrics)
-                stat_alternative, less_p = wilcoxon(
+                stat_alternative, less_p = statistical_method(
                     x1,
                     x2,
                     alternative="less",
@@ -1517,9 +1534,9 @@ def wilcoxon_compare(df, group_by, column):
 # plot_box_policies(df_policies)
 
 if __name__ == "__main__":
-    # df = load_df()
+    df = load_df()
     # # apply_policies(df)
-    # apply_policies_artigo(df)
+    apply_policies_artigo(df)
     df_policies = load_df_policies()
     columns = ["group", "policy", "dataset", "run"]
     comparisons = wilcoxon_compare(
