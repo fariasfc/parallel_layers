@@ -61,14 +61,21 @@ policies = [
     # "smallest_euclidian_train_holdout_test_utopic",
     # "smallest_euclidian_holdout_test_utopic",
     # "best_holdout_in_best_architecture_10fold",
-    "TTVHT",
+    # Holdout Test
+    "THT",
+    "THTN",
+    "THTNE",
+    "THTNB",
+    # Train Validation Holdout
     "TTVH",
-    "TTVHTN",
     "TTVHN",
-    "TTVHTNE",
-    "TTVHTNB",
     "TTVHNE",
     "TTVHNB",
+    # Train Validation Holdout Test
+    "TTVHT",
+    "TTVHTN",
+    "TTVHTNE",
+    "TTVHTNB",
     # "Best Architectural Holdout",
     # "Best Architectural Validation",
     # "Best Architectural Holdout Over All Runs",
@@ -1148,23 +1155,30 @@ def apply_policies_artigo(df):
                             mcdm_tuples = [(holdout_metric, 1), ("num_neurons", -1)]
                         elif policy == "Test":
                             mcdm_tuples = [(test_metric, 1), ("num_neurons", -1)]
-                        elif policy.startswith("TTVH"):
-                            mcdm_tuples = [
-                                (train_metric, 1),
-                                (validation_metric, 1),
-                                (holdout_metric, 1),
-                            ]
-                            remaining_policy = deepcopy(policy)
-                            remaining_policy = remaining_policy.replace("TTVH", "")
+                        elif policy.startswith("T"):
+                            remaining_policy = policy[1:]
+                            mcdm_tuples = []
+                            if remaining_policy.startswith("T"):
+                                mcdm_tuples.append((train_metric, 1))
+                                remaining_policy = remaining_policy[1:]
+
                             while len(remaining_policy) > 0:
-                                if remaining_policy[0] == "T":
+                                if remaining_policy[0] == "V":
+                                    mcdm_tuples.append((validation_metric, 1))
+                                elif remaining_policy[0] == "H":
+                                    mcdm_tuples.append((holdout_metric, 1))
+                                elif remaining_policy[0] == "T":
                                     mcdm_tuples.append((test_metric, 1))
-                                if remaining_policy[0] == "N":
+                                elif remaining_policy[0] == "N":
                                     mcdm_tuples.append(("num_neurons", -1))
-                                if remaining_policy[0] == "E":
+                                elif remaining_policy[0] == "E":
                                     mcdm_tuples.append(("epoch", 1))
-                                if remaining_policy[0] == "B":
+                                elif remaining_policy[0] == "B":
                                     mcdm_tuples.append(("epoch", -1))
+                                else:
+                                    raise ValueError(
+                                        f"Error parsing {policy}, during {remaining_policy}"
+                                    )
 
                                 remaining_policy = remaining_policy[1:]
 
@@ -1176,20 +1190,28 @@ def apply_policies_artigo(df):
                         sort_values_by = [k for (k, v) in mcdm_tuples]
                         ascending = [v == -1 for (k, v) in mcdm_tuples]
                         if pmlps_grouped is None:
-                            if policy.startswith("TTVH"):
+                            if policy in ["Train", "Validation", "Holdout", "Test"]:
+                                ranked_pmlps_df = pmlps_df_run.sort_values(
+                                    by=sort_values_by,
+                                    ascending=ascending,
+                                )
+                            else:
                                 ranked_pmlps_df = get_ranked_pmlps_df(
                                     pmlps_df_run,
                                     mcdm_tuples,
                                     only_pareto_solutions=True,
                                     sort_by_rank=True,
                                 )
-                            else:
+                        else:
+                            if policy in ["Train", "Validation", "Holdout", "Test"]:
                                 ranked_pmlps_df = pmlps_df_run.sort_values(
                                     by=sort_values_by,
                                     ascending=ascending,
                                 )
-                        else:
-                            if policy.startswith("TTVH"):
+                                ranked_pmlps_df_grouped = pmlps_grouped.sort_values(
+                                    by=sort_values_by, ascending=ascending
+                                )
+                            else:
                                 ranked_pmlps_df_grouped = get_ranked_pmlps_df(
                                     pmlps_grouped,
                                     mcdm_tuples=mcdm_tuples,
@@ -1201,14 +1223,6 @@ def apply_policies_artigo(df):
                                     mcdm_tuples,
                                     only_pareto_solutions=False,
                                     sort_by_rank=True,
-                                )
-                            else:
-                                ranked_pmlps_df = pmlps_df_run.sort_values(
-                                    by=sort_values_by,
-                                    ascending=ascending,
-                                )
-                                ranked_pmlps_df_grouped = pmlps_grouped.sort_values(
-                                    by=sort_values_by, ascending=ascending
                                 )
                             activation = ranked_pmlps_df_grouped.iloc[0][
                                 "activation_name"
