@@ -48,7 +48,7 @@ datasets = [
 ]
 experiments = [
     "exp0090_politica_1_oracle_1m1l",
-    # "exp0090_politica_1_oracle_1m1l_nosbss",
+    "exp0090_politica_1_oracle_1m1l_nosbss",
 ]
 
 policies = [
@@ -131,7 +131,10 @@ def csv_to_parquet():
     df.to_parquet(df_parquet_path)
 
 
-def load_df():
+def load_df(only_sbss=True):
+    experiments = ["exp0090_politica_1_oracle_1m1l"]
+    if not only_sbss:
+        experiments.append("exp0090_politica_1_oracle_1m1l_nosbss")
     df = pd.read_parquet(df_parquet_path)
     # Removing repeated experiments
     non_duplicated_index = (
@@ -1112,7 +1115,9 @@ def apply_policies_artigo(df):
             pmlps_df_experiment = df[df["experiment"] == experiment]
             for group in ["Individual", "Local", "Global"]:
                 choices = []
-                policy_file_path = policies_folder / group / f"{policy}.csv"
+                policy_file_path = (
+                    policies_folder / experiment / group / f"{policy}.csv"
+                )
                 policy_file_path.parent.mkdir(parents=True, exist_ok=True)
                 if policy_file_path.exists():
                     print(f"{policy_file_path.absolute()} exists.")
@@ -1547,9 +1552,27 @@ def statistical_test(df, group_by, column, method="wilcoxon"):
 
 # plot_box_policies(df_policies)
 
+
+def multicell_latex(tablepath):
+    import re
+
+    lines = []
+    with open(tablepath, mode="r") as table:
+        for line in table.readlines():
+            lines.append(
+                re.sub("(\d+\.\d+) (\(\d+.\d+\))", r"\\makecell{\g<1>\\\\\g<2>}", line)
+            )
+
+    with open(tablepath.replace(".tex", "_processed.tex"), mode="w") as new_table:
+        new_table.writelines(lines)
+
+
 if __name__ == "__main__":
-    df = load_df()
-    # # apply_policies(df)
+    # multicell_latex(
+    #     "/Users/fcf/projects/parallel_mlps/experiments/exp0090/overall_acc/plots/tables/single_sets.tex"
+    # )
+    df = load_df(only_sbss=False)
+    # apply_policies(df)
     apply_policies_artigo(df)
     df_policies = load_df_policies()
     columns = ["group", "policy", "dataset", "run"]
