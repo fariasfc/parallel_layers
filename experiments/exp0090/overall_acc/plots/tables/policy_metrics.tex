@@ -1,27 +1,28 @@
 \begin{table}
 \centering
 \label{tab:policy_metrics}
-\begin{tabular}{lrrrrrrr}
+\begin{tabular}{lrrrrrrrr}
 \toprule
-{} & \multicolumn{4}{l}{Accuracy} & \multicolumn{2}{l}{Disagreement} \\
-{} & Num Neurons &    Train & Validation & Holdout &   Test & Train-Validation & Holdout-Test \\
-Policy                                             &             &          &            &         &        &                  &              \\
+{} & \multicolumn{4}{l}{Accuracy} & \multicolumn{3}{l}{Disagreement} \\
+{} & Num Neurons &    Train & Validation & Holdout &   Test & Train-Validation & Holdout-Test &   All \\
+Policy     &             &          &            &         &        &                  &              &       \\
 \midrule
-Oracle                                             &       42.80 &    87.42 &      87.07 &   87.68 &  90.61 &             2.67 &         4.29 \\
-topsis\_pareto\_Oracle\_Holdout\_no\_epochs\_no\_num\_n... &       75.50 &    91.22 &      89.05 &   90.90 &  89.65 &             2.83 &         3.52 \\
-Utopic Euclidean Train Validation Holdout Test     &       78.20 &    91.34 &      90.34 &   91.22 &  88.77 &             2.30 &         3.45 \\
-topsis\_pareto\_Oracle\_Holdout\_validation\_train      &       11.89 &    87.53 &      87.85 &   87.70 &  85.90 &             2.04 &         3.39 \\
-topsis\_pareto\_Oracle                               &        6.10 &    84.40 &      83.36 &   84.32 &  85.79 &             2.60 &         2.93 \\
-Holdout                                            &       76.41 &    92.08 &      89.94 &   91.76 &  85.54 &             2.77 &         6.37 \\
-Best Architectural Holdout Over All Runs           &       87.36 &    90.99 &      88.78 &   90.83 &  85.48 &             3.08 &         5.49 \\
-Utopic Euclidean Train Validation Holdout          &       76.97 &    91.67 &      90.96 &   91.59 &  85.48 &             1.98 &         6.28 \\
-Train                                              &       73.47 &    92.45 &      87.47 &   91.28 &  85.06 &             5.03 &         6.40 \\
-Best Architectural Validation Over All Runs        &       92.29 &    89.17 &      90.13 &   89.51 &  84.91 &             1.96 &         5.19 \\
-Validation                                         &       47.02 &    87.85 &      91.86 &   88.97 &  84.25 &             4.26 &         5.21 \\
-topsis\_pareto\_train\_validation\_Holdout             &       10.77 &    87.53 &      87.79 &   87.66 &  82.96 &             2.20 &         5.33 \\
-topsis\_pareto\_train                                &        6.59 &    86.91 &      84.04 &   86.31 &  82.18 &             3.31 &         4.76 \\
-topsis\_pareto\_Holdout                              &        6.66 &    86.47 &      85.62 &   86.44 &  82.16 &             2.26 &         4.85 \\
-topsis\_pareto\_validation                           &        6.85 &    84.60 &      87.31 &   85.29 &  81.55 &             3.05 &         4.70 \\
+Test       &       65.44 &    88.47 &      87.82 &   88.56 &  89.11 &             2.40 &         3.72 &  2.68 \\
+THT        &       82.54 &    90.61 &      88.69 &   90.46 &  88.62 &             3.22 &         3.67 &  2.91 \\
+TTVHT      &       85.72 &    90.67 &      89.79 &   90.59 &  87.89 &             2.69 &         3.75 &  2.72 \\
+THTN       &       11.75 &    86.55 &      85.86 &   86.71 &  86.08 &             2.62 &         3.10 &  2.46 \\
+TTVHTN     &       16.64 &    87.67 &      87.73 &   87.80 &  85.88 &             2.27 &         3.50 &  2.51 \\
+TTVH       &       85.65 &    91.02 &      90.43 &   91.00 &  85.41 &             2.36 &         5.87 &  3.68 \\
+Holdout    &       83.39 &    91.53 &      89.36 &   91.26 &  85.35 &             2.87 &         6.07 &  3.85 \\
+Train      &       83.50 &    91.88 &      87.77 &   90.97 &  85.20 &             4.21 &         5.98 &  4.21 \\
+TTVHTNE    &       16.58 &    87.63 &      87.21 &   87.65 &  85.19 &             2.37 &         3.74 &  2.66 \\
+THTNE      &       10.99 &    86.23 &      85.34 &   86.48 &  85.01 &             3.03 &         3.20 &  2.65 \\
+Validation &       73.25 &    88.70 &      90.93 &   89.38 &  84.76 &             2.97 &         5.11 &  3.74 \\
+TTVHTNB    &       23.06 &    84.57 &      86.08 &   85.18 &  83.20 &             2.66 &         3.75 &  2.84 \\
+TTVHN      &       15.15 &    87.62 &      88.01 &   87.79 &  83.15 &             2.16 &         5.25 &  3.38 \\
+TTVHNE     &       15.20 &    87.49 &      87.20 &   87.53 &  83.05 &             2.32 &         5.16 &  3.35 \\
+THTNB      &       18.29 &    82.22 &      83.97 &   83.37 &  82.28 &             3.01 &         3.40 &  2.86 \\
+TTVHNB     &       21.12 &    83.94 &      85.54 &   84.56 &  80.82 &             2.59 &         4.66 &  3.30 \\
 \bottomrule
 \end{tabular}
 \end{table}

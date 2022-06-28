@@ -1,4 +1,5 @@
 from copy import deepcopy
+from scipy.stats import shapiro, bartlett
 from sklearn.linear_model import LinearRegression
 from scipy.stats import wilcoxon, ttest_rel, ttest_ind
 
@@ -1503,13 +1504,28 @@ def statistical_test(df, group_by, column, method="wilcoxon"):
             # print(k1, k2)
             # print(len(x1), len(x2))
 
+            alpha = 0.05
+
             if method == "wilcoxon":
                 statistical_method = wilcoxon
             elif method == "t-student":
                 statistical_method = ttest_rel
+                # Checking normality
+                for xi in [x1, x2]:
+                    stat_norm, p_norm = shapiro(x=xi)
+                    # Reject normality hypothesis
+                    if p_norm < alpha:
+                        raise RuntimeError(
+                            f"stat={stat_norm}, p_norm={p_norm} < {alpha} => Reject H0 (Reject is Gaussian). {k1, i1}, {k2, i2}"
+                        )
+                # Checking variances
+                stat_var, p_var = bartlett(x1, x2)
+                if p_var < alpha:
+                    raise RuntimeError(
+                        f"stat={stat_norm}, p_norm={p_norm} < {alpha} => Reject H0 (x1 and x2 are from populations with equal variance). {k1, i1}, {k2, i2}"
+                    )
             stat, p = statistical_method(x1, x2)
 
-            alpha = 0.05
             if p < alpha:
                 # The one-sided test has the null hypothesis that the median is positive against the alternative that it is negative (alternative == 'less'), or vice versa (alternative == 'greater.'). https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.wilcoxon.html
                 # H0: median(best_metrics) - median(current_arch_metrics) >= 0, Ha: median(best_metrics) < median(current_arch_metrics)
@@ -1568,17 +1584,17 @@ def multicell_latex(tablepath):
 
 
 if __name__ == "__main__":
-    # multicell_latex(
-    #     "/Users/fcf/projects/parallel_mlps/experiments/exp0090/overall_acc/plots/tables/single_sets.tex"
-    # )
-    df = load_df(only_sbss=False)
-    # apply_policies(df)
-    apply_policies_artigo(df)
-    df_policies = load_df_policies()
-    columns = ["group", "policy", "dataset", "run"]
-    comparisons = wilcoxon_compare(
-        df_policies.sort_values(by=columns), ["group", "policy"], "test_overall_acc"
+    multicell_latex(
+        "/Users/fcf/projects/parallel_mlps/experiments/exp0090/overall_acc/plots/tables/sbss_no_sbss.tex"
     )
+    # df = load_df(only_sbss=False)
+    # # apply_policies(df)
+    # apply_policies_artigo(df)
+    # df_policies = load_df_policies()
+    # columns = ["group", "policy", "dataset", "run"]
+    # comparisons = wilcoxon_compare(
+    #     df_policies.sort_values(by=columns), ["group", "policy"], "test_overall_acc"
+    # )
     # sbss_vs_nosbss_plots(df_policies)
 
     # df = post_process_dfs(df)

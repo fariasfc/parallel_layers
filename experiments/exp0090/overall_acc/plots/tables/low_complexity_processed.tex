@@ -1,0 +1,30 @@
+\begin{table}
+\centering
+\label{tab:low_complexity}
+\begin{tabular}{lllllllllll}
+\toprule
+       &        &   Architecture & Early Stopping & \multicolumn{4}{l}{Accuracy} & \multicolumn{3}{l}{Disagreement} \\
+       &        &      \# Neurons &       \# Epochs &          Train &    Validation &       Holdout &           Test & Train-Validation & Holdout-Test &          All \\
+(Selection Strategy, Group) & (Selection Strategy, Policy) &                &                &                &               &               &                &                  &              &              \\
+\midrule
+Individual & TTVH &  \makecell{75.98\\(27.06)} &  \makecell{82.64\\(26.28)} &    \makecell{91.49\\(8.4)} &   \makecell{91.1\\(7.09)} &   \makecell{91.5\\(7.91)} &   \makecell{85.42\\(9.39)} &      \makecell{2.26\\(2.36)} &  \makecell{6.26\\(6.91)} &  \makecell{3.84\\(3.59)} \\
+       & TTVHN &   \makecell{10.27\\(9.27)} &   \makecell{78.08\\(28.3)} &   \makecell{87.59\\(7.94)} &  \makecell{88.36\\(7.13)} &  \makecell{87.83\\(7.66)} &    \makecell{82.9\\(9.96)} &      \makecell{2.14\\(1.93)} &  \makecell{5.54\\(7.19)} &  \makecell{3.54\\(3.74)} \\
+       & THT &   \makecell{75.5\\(24.61)} &  \makecell{78.21\\(27.19)} &   \makecell{91.22\\(8.36)} &  \makecell{89.05\\(7.89)} &   \makecell{90.9\\(8.07)} &   \makecell{89.65\\(7.34)} &      \makecell{2.83\\(2.67)} &  \makecell{3.52\\(3.26)} &   \makecell{2.67\\(2.0)} \\
+       & THTN &    \makecell{8.75\\(7.24)} &   \makecell{78.35\\(27.0)} &   \makecell{86.78\\(7.93)} &  \makecell{85.97\\(8.22)} &    \makecell{86.7\\(7.8)} &    \makecell{86.9\\(7.94)} &      \makecell{2.37\\(2.65)} &  \makecell{2.75\\(2.11)} &    \makecell{2.2\\(1.6)} \\
+       & TTVHT &   \makecell{76.5\\(24.32)} &  \makecell{77.75\\(27.45)} &    \makecell{91.05\\(8.5)} &  \makecell{90.47\\(7.21)} &   \makecell{91.05\\(8.0)} &   \makecell{88.88\\(7.78)} &      \makecell{2.52\\(2.45)} &  \makecell{3.42\\(3.53)} &  \makecell{2.48\\(2.11)} \\
+       & TTVHTN &   \makecell{11.37\\(9.44)} &  \makecell{77.48\\(27.79)} &   \makecell{87.54\\(7.92)} &  \makecell{88.14\\(7.13)} &  \makecell{87.76\\(7.61)} &   \makecell{86.44\\(8.35)} &      \makecell{2.09\\(1.93)} &  \makecell{3.15\\(3.58)} &   \makecell{2.3\\(1.93)} \\
+Local & TTVH &  \makecell{88.13\\(14.07)} &  \makecell{75.85\\(27.77)} &    \makecell{90.9\\(8.51)} &  \makecell{90.36\\(7.27)} &  \makecell{90.93\\(7.99)} &   \makecell{85.51\\(9.29)} &      \makecell{2.43\\(2.34)} &  \makecell{5.71\\(6.44)} &  \makecell{3.62\\(3.43)} \\
+       & TTVHN &   \makecell{15.97\\(8.89)} &  \makecell{77.12\\(27.25)} &    \makecell{87.76\\(7.9)} &   \makecell{88.0\\(7.32)} &    \makecell{87.9\\(7.6)} &  \makecell{83.33\\(10.02)} &      \makecell{2.22\\(2.24)} &  \makecell{5.23\\(6.55)} &  \makecell{3.39\\(3.43)} \\
+       & THT &  \makecell{82.75\\(19.23)} &  \makecell{68.67\\(30.14)} &   \makecell{90.56\\(8.51)} &  \makecell{88.58\\(7.57)} &  \makecell{90.28\\(8.03)} &   \makecell{88.76\\(7.59)} &      \makecell{3.26\\(3.32)} &  \makecell{3.58\\(3.79)} &   \makecell{2.86\\(2.4)} \\
+       & THTN &   \makecell{13.13\\(7.47)} &  \makecell{74.71\\(26.79)} &   \makecell{86.77\\(8.84)} &  \makecell{85.91\\(8.06)} &    \makecell{86.8\\(7.9)} &   \makecell{86.26\\(8.27)} &      \makecell{2.53\\(3.83)} &  \makecell{3.15\\(2.98)} &  \makecell{2.42\\(2.34)} \\
+       & TTVHT &   \makecell{85.79\\(16.7)} &  \makecell{68.76\\(30.63)} &   \makecell{90.51\\(8.55)} &  \makecell{89.58\\(7.33)} &  \makecell{90.45\\(8.02)} &    \makecell{87.85\\(8.1)} &      \makecell{2.88\\(2.77)} &   \makecell{3.7\\(4.36)} &  \makecell{2.78\\(2.54)} \\
+       & TTVHTN &   \makecell{17.63\\(10.1)} &  \makecell{77.45\\(26.62)} &   \makecell{87.81\\(8.17)} &   \makecell{87.62\\(7.3)} &   \makecell{87.9\\(7.66)} &   \makecell{85.84\\(8.53)} &      \makecell{2.51\\(2.68)} &  \makecell{3.48\\(4.24)} &  \makecell{2.59\\(2.45)} \\
+Global & TTVH &   \makecell{92.86\\(10.0)} &  \makecell{72.07\\(28.75)} &   \makecell{90.68\\(8.25)} &  \makecell{89.82\\(7.55)} &  \makecell{90.58\\(7.96)} &   \makecell{85.31\\(9.36)} &      \makecell{2.39\\(2.25)} &  \makecell{5.64\\(7.08)} &  \makecell{3.57\\(3.77)} \\
+       & TTVHN &  \makecell{19.21\\(10.13)} &  \makecell{76.32\\(26.87)} &   \makecell{87.52\\(8.04)} &  \makecell{87.66\\(7.64)} &  \makecell{87.64\\(7.74)} &  \makecell{83.21\\(10.24)} &      \makecell{2.12\\(2.13)} &  \makecell{4.99\\(6.82)} &  \makecell{3.23\\(3.62)} \\
+       & THT &  \makecell{89.36\\(12.43)} &  \makecell{69.11\\(30.22)} &  \makecell{90.04\\(10.02)} &  \makecell{88.45\\(7.74)} &   \makecell{90.21\\(8.2)} &   \makecell{87.44\\(8.42)} &      \makecell{3.59\\(3.66)} &    \makecell{3.9\\(4.9)} &   \makecell{3.18\\(2.9)} \\
+       & THTN &   \makecell{13.36\\(6.87)} &  \makecell{71.53\\(27.49)} &   \makecell{86.09\\(9.84)} &   \makecell{85.7\\(8.39)} &  \makecell{86.62\\(7.89)} &    \makecell{85.08\\(9.0)} &      \makecell{2.95\\(4.19)} &   \makecell{3.4\\(4.15)} &  \makecell{2.75\\(2.83)} \\
+       & TTVHT &   \makecell{94.86\\(5.01)} &  \makecell{68.78\\(30.02)} &    \makecell{90.45\\(8.4)} &   \makecell{89.31\\(7.5)} &  \makecell{90.28\\(8.01)} &   \makecell{86.94\\(8.51)} &      \makecell{2.67\\(2.73)} &  \makecell{4.12\\(5.11)} &   \makecell{2.9\\(2.89)} \\
+       & TTVHTN &  \makecell{20.93\\(13.45)} &  \makecell{76.09\\(25.73)} &    \makecell{87.67\\(8.1)} &  \makecell{87.42\\(7.62)} &  \makecell{87.73\\(7.74)} &    \makecell{85.37\\(8.8)} &      \makecell{2.21\\(2.41)} &  \makecell{3.86\\(4.75)} &  \makecell{2.66\\(2.64)} \\
+\bottomrule
+\end{tabular}
+\end{table}

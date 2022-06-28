@@ -1,0 +1,24 @@
+\begin{table}
+\centering
+\label{tab:single_sets}
+\begin{tabular}{lllllllllll}
+\toprule
+       &      &   Architecture & Early Stopping & \multicolumn{4}{l}{Accuracy} & \multicolumn{3}{l}{Disagreement} \\
+       &      &      \# Neurons &       \# Epochs &         Train &    Validation &       Holdout &          Test & Train-Validation & Holdout-Test &          All \\
+(Selection Strategy, Group) & (Selection Strategy, Policy) &                &                &               &               &               &               &                  &              &              \\
+\midrule
+Individual & Train &  \makecell{73.47\\(29.13)} &   \makecell{86.02\\(24.6)} &  \makecell{92.45\\(7.72)} &   \makecell{87.47\\(7.8)} &  \makecell{91.28\\(7.71)} &   \makecell{85.06\\(9.5)} &      \makecell{5.03\\(4.21)} &   \makecell{6.4\\(6.84)} &  \makecell{4.66\\(4.05)} \\
+       & Validation &  \makecell{47.02\\(34.84)} &  \makecell{62.99\\(35.21)} &   \makecell{87.85\\(8.8)} &  \makecell{91.86\\(6.85)} &  \makecell{88.97\\(7.98)} &  \makecell{84.25\\(9.78)} &      \makecell{4.26\\(3.96)} &  \makecell{5.21\\(6.76)} &  \makecell{4.38\\(3.83)} \\
+       & Holdout &   \makecell{76.41\\(27.5)} &  \makecell{84.79\\(25.13)} &  \makecell{92.08\\(7.92)} &  \makecell{89.94\\(7.79)} &  \makecell{91.76\\(7.66)} &  \makecell{85.54\\(9.29)} &      \makecell{2.77\\(2.66)} &  \makecell{6.37\\(6.53)} &  \makecell{3.94\\(3.51)} \\
+       & Test &   \makecell{42.8\\(33.91)} &  \makecell{63.72\\(34.72)} &   \makecell{87.42\\(8.8)} &  \makecell{87.07\\(7.64)} &  \makecell{87.68\\(7.98)} &  \makecell{90.61\\(7.05)} &      \makecell{2.67\\(3.25)} &  \makecell{4.29\\(3.51)} &  \makecell{3.13\\(2.41)} \\
+Local & Train &  \makecell{85.19\\(18.79)} &  \makecell{80.42\\(26.98)} &  \makecell{91.75\\(8.21)} &   \makecell{88.0\\(7.93)} &   \makecell{90.95\\(8.0)} &  \makecell{85.21\\(9.43)} &       \makecell{3.86\\(3.6)} &  \makecell{5.98\\(7.27)} &  \makecell{4.12\\(4.09)} \\
+       & Validation &  \makecell{80.45\\(20.88)} &  \makecell{62.89\\(33.46)} &   \makecell{89.07\\(8.9)} &   \makecell{90.8\\(7.08)} &  \makecell{89.65\\(8.21)} &  \makecell{85.14\\(9.38)} &      \makecell{2.68\\(2.69)} &   \makecell{4.94\\(6.1)} &  \makecell{3.52\\(3.19)} \\
+       & Holdout &   \makecell{86.41\\(17.5)} &  \makecell{78.35\\(27.47)} &  \makecell{91.52\\(8.01)} &   \makecell{89.37\\(7.6)} &   \makecell{91.2\\(7.71)} &   \makecell{85.01\\(9.6)} &      \makecell{2.76\\(2.76)} &  \makecell{6.36\\(7.27)} &  \makecell{3.94\\(3.97)} \\
+       & Test &  \makecell{68.52\\(30.98)} &   \makecell{61.08\\(34.2)} &  \makecell{88.61\\(9.19)} &  \makecell{88.13\\(7.81)} &  \makecell{88.77\\(8.51)} &  \makecell{89.05\\(7.49)} &      \makecell{2.28\\(2.62)} &  \makecell{3.46\\(3.28)} &  \makecell{2.48\\(2.11)} \\
+Global & Train &  \makecell{91.86\\(11.95)} &  \makecell{75.19\\(27.65)} &  \makecell{91.43\\(8.26)} &   \makecell{87.85\\(7.9)} &  \makecell{90.69\\(8.01)} &  \makecell{85.34\\(9.22)} &       \makecell{3.73\\(3.9)} &  \makecell{5.55\\(6.55)} &  \makecell{3.85\\(3.87)} \\
+       & Validation &  \makecell{92.29\\(13.52)} &  \makecell{61.85\\(29.62)} &  \makecell{89.17\\(8.28)} &  \makecell{90.13\\(7.42)} &  \makecell{89.51\\(7.95)} &   \makecell{84.91\\(9.8)} &      \makecell{1.96\\(1.89)} &  \makecell{5.19\\(6.77)} &  \makecell{3.33\\(3.48)} \\
+       & Holdout &  \makecell{87.36\\(23.97)} &  \makecell{75.85\\(26.96)} &  \makecell{90.99\\(8.93)} &  \makecell{88.78\\(7.87)} &  \makecell{90.83\\(8.02)} &  \makecell{85.48\\(9.18)} &      \makecell{3.08\\(2.75)} &  \makecell{5.49\\(6.39)} &  \makecell{3.67\\(3.47)} \\
+       & Test &   \makecell{85.0\\(21.18)} &   \makecell{62.13\\(32.4)} &  \makecell{89.37\\(8.82)} &  \makecell{88.26\\(8.03)} &  \makecell{89.24\\(8.46)} &  \makecell{87.69\\(8.17)} &      \makecell{2.24\\(3.15)} &    \makecell{3.4\\(4.4)} &  \makecell{2.42\\(2.74)} \\
+\bottomrule
+\end{tabular}
+\end{table}
