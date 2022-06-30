@@ -57,6 +57,7 @@ policies = [
     "Train",
     "Validation",
     "Holdout",
+    "Holdout-80-Percentile",
     # "pareto_second_best_holdout_num_neurons",
     # "0.01_smallest_mean_dist_holdout",
     # "smallest_euclidian_train_holdout_test_utopic",
@@ -1153,6 +1154,24 @@ def apply_policies_artigo(df):
                         else:
                             pmlps_grouped = None
 
+                        if policy == "Holdout-80-Percentile":
+                            # Removing first 20%
+                            percentile = 1 - 0.8
+                            if pmlps_grouped is not None:
+                                pmlps_grouped = pmlps_grouped.sort_values(
+                                    by=[holdout_metric, "num_neurons"],
+                                    ascending=[False, True],
+                                )
+                                from_ix = int(percentile * pmlps_grouped.shape[0])
+                                pmlps_grouped = pmlps_grouped.iloc[from_ix:, :]
+                            else:
+                                from_ix = int(percentile * pmlps_df_run.shape[0])
+                                pmlps_df_run = pmlps_df_run.sort_values(
+                                    by=[holdout_metric, "num_neurons"],
+                                    ascending=[False, True],
+                                )
+                                pmlps_df_run = pmlps_df_run.iloc[from_ix:, :]
+
                         if policy == "Train":
                             mcdm_tuples = [(train_metric, 1), ("num_neurons", -1)]
                         elif policy == "Validation":
@@ -1161,6 +1180,9 @@ def apply_policies_artigo(df):
                             mcdm_tuples = [(holdout_metric, 1), ("num_neurons", -1)]
                         elif policy == "Test":
                             mcdm_tuples = [(test_metric, 1), ("num_neurons", -1)]
+                        elif policy == "Holdout-80-Percentile":
+                            mcdm_tuples = [(holdout_metric, 1), ("num_neurons", -1)]
+
                         elif policy.startswith("T"):
                             remaining_policy = policy[1:]
                             mcdm_tuples = []
@@ -1195,8 +1217,15 @@ def apply_policies_artigo(df):
 
                         sort_values_by = [k for (k, v) in mcdm_tuples]
                         ascending = [v == -1 for (k, v) in mcdm_tuples]
+                        ## Individual
                         if pmlps_grouped is None:
-                            if policy in ["Train", "Validation", "Holdout", "Test"]:
+                            if policy in [
+                                "Train",
+                                "Validation",
+                                "Holdout",
+                                "Test",
+                                "Holdout-80-Percentile",
+                            ]:
                                 ranked_pmlps_df = pmlps_df_run.sort_values(
                                     by=sort_values_by,
                                     ascending=ascending,
@@ -1208,8 +1237,15 @@ def apply_policies_artigo(df):
                                     only_pareto_solutions=True,
                                     sort_by_rank=True,
                                 )
+                        ## Local or Global
                         else:
-                            if policy in ["Train", "Validation", "Holdout", "Test"]:
+                            if policy in [
+                                "Train",
+                                "Validation",
+                                "Holdout",
+                                "Test",
+                                "Holdout-80-Percentile",
+                            ]:
                                 ranked_pmlps_df = pmlps_df_run.sort_values(
                                     by=sort_values_by,
                                     ascending=ascending,
@@ -1584,12 +1620,12 @@ def multicell_latex(tablepath):
 
 
 if __name__ == "__main__":
-    multicell_latex(
-        "/Users/fcf/projects/parallel_mlps/experiments/exp0090/overall_acc/plots/tables/sbss_no_sbss.tex"
-    )
-    # df = load_df(only_sbss=False)
+    # multicell_latex(
+    #     "/Users/fcf/projects/parallel_mlps/experiments/exp0090/overall_acc/plots/tables/sbss_no_sbss.tex"
+    # )
+    df = load_df(only_sbss=False)
     # # apply_policies(df)
-    # apply_policies_artigo(df)
+    apply_policies_artigo(df)
     # df_policies = load_df_policies()
     # columns = ["group", "policy", "dataset", "run"]
     # comparisons = wilcoxon_compare(
