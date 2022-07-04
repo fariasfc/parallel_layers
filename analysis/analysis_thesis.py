@@ -65,18 +65,32 @@ policies = [
     # "best_holdout_in_best_architecture_10fold",
     # Holdout Test
     "THT",
+    "THTE",
+    "THTC",
+    "THTB",
     "THTN",
     "THTNE",
+    "THTNC",
     "THTNB",
     # Train Validation Holdout
     "TTVH",
+    "TTVHE",
+    "TTVHC",
+    "TTVHB",
+    "TTVHW",
+    "TTVHM",
     "TTVHN",
     "TTVHNE",
+    "TTVHNC",
     "TTVHNB",
     # Train Validation Holdout Test
     "TTVHT",
+    "TTVHTE",
+    "TTVHTC",
+    "TTVHTB",
     "TTVHTN",
     "TTVHTNE",
+    "TTVHTNC",
     "TTVHTNB",
     # "Best Architectural Holdout",
     # "Best Architectural Validation",
@@ -1203,6 +1217,30 @@ def apply_policies_artigo(df):
                                     mcdm_tuples.append(("epoch", 1))
                                 elif remaining_policy[0] == "B":
                                     mcdm_tuples.append(("epoch", -1))
+                                elif remaining_policy[0] == "W":
+                                    mcdm_tuples.append(("weight_regularization", -1))
+                                elif remaining_policy[0] == "M":
+                                    mcdm_tuples.append(("weight_regularization", 1))
+                                elif remaining_policy[0] == "C":
+                                    mcdm_tuples.append(("epoch", 1))
+                                    patience = 10
+                                    max_epochs = 100
+
+                                    # Setting models that not converged (epoch > 90)
+                                    pmlps_df_run.loc[:, "epoch"] = pmlps_df_run[
+                                        "epoch"
+                                    ].where(
+                                        pmlps_df_run["epoch"] < max_epochs - patience, 0
+                                    )
+                                    if pmlps_grouped is not None:
+                                        pmlps_grouped.loc[:, "epoch"] = pmlps_grouped[
+                                            "epoch"
+                                        ].where(
+                                            pmlps_grouped["epoch"]
+                                            < max_epochs - patience,
+                                            0,
+                                        )
+
                                 else:
                                     raise ValueError(
                                         f"Error parsing {policy}, during {remaining_policy}"

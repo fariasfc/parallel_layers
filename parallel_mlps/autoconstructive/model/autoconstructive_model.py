@@ -4,6 +4,7 @@ from experiment_utils import assess_model
 
 import pymcdm
 from pathlib import Path
+
 # from kneed import KneeLocator
 import heapq
 import multiprocessing
@@ -1040,6 +1041,16 @@ class AutoConstructiveModel(nn.Module):
             mcdm_tuples = [
                 ("num_neurons", -1),
                 ("epoch", 1),
+                ("train_overall_acc", 1),
+                ("validation_overall_acc", 1),
+                ("holdout_overall_acc", 1),
+            ]
+            ranked_pmlps_df = self.get_ranked_pmlps_df(
+                pmlps_df, mcdm_tuples, only_pareto_solutions=True, sort_by_rank=True
+            )
+        elif self.chosen_policy == "TTVHN":
+            mcdm_tuples = [
+                ("num_neurons", -1),
                 ("train_overall_acc", 1),
                 ("validation_overall_acc", 1),
                 ("holdout_overall_acc", 1),
