@@ -1048,7 +1048,7 @@ class AutoConstructiveModel(nn.Module):
             ranked_pmlps_df = self.get_ranked_pmlps_df(
                 pmlps_df, mcdm_tuples, only_pareto_solutions=True, sort_by_rank=True
             )
-        elif self.chosen_policy == "TTVHN":
+        elif self.chosen_policy == "policy10":
             mcdm_tuples = [
                 ("num_neurons", -1),
                 ("train_overall_acc", 1),
